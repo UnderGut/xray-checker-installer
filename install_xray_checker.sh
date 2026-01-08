@@ -198,12 +198,21 @@ LANG_EN=(
     [STARTING_SERVICE]="Starting service..."
     [CHECKING_HEALTH]="Checking service health..."
 
+    # Access Method
+    [ACCESS_METHOD_TITLE]="How do you want to access xray-checker?"
+    [ACCESS_DIRECT_IP]="Direct access via IP:PORT (HTTP)"
+    [ACCESS_DIRECT_IP_DESC]="Simple setup, no domain required"
+    [ACCESS_REVERSE_PROXY]="Via domain with HTTPS"
+    [ACCESS_REVERSE_PROXY_DESC]="Secure, requires domain and SSL certificate"
+
     # Success
     [INSTALL_COMPLETE]="INSTALLATION COMPLETE"
     [WEB_INTERFACE]="Web Interface"
     [METRICS_ENDPOINT]="Metrics Endpoint"
     [HEALTH_ENDPOINT]="Health Check"
     [RERUN_CMD]="To reopen this menu, run"
+    [HTTP_WARNING]="HTTP is not secure. Setup reverse proxy with HTTPS for production use"
+    [HTTPS_RECOMMENDED]="For secure access, configure domain with SSL"
 
     # Service Management
     [MANAGE_TITLE]="SERVICE MANAGEMENT"
@@ -393,12 +402,21 @@ LANG_RU=(
     [STARTING_SERVICE]="Запуск сервиса..."
     [CHECKING_HEALTH]="Проверка состояния сервиса..."
 
+    # Способ доступа
+    [ACCESS_METHOD_TITLE]="Как вы хотите получать доступ к xray-checker?"
+    [ACCESS_DIRECT_IP]="Напрямую по IP:PORT (HTTP)"
+    [ACCESS_DIRECT_IP_DESC]="Простая настройка, домен не нужен"
+    [ACCESS_REVERSE_PROXY]="Через домен с HTTPS"
+    [ACCESS_REVERSE_PROXY_DESC]="Безопасно, требуется домен и SSL сертификат"
+
     # Успех
     [INSTALL_COMPLETE]="УСТАНОВКА ЗАВЕРШЕНА"
     [WEB_INTERFACE]="Веб-интерфейс"
     [METRICS_ENDPOINT]="Метрики"
     [HEALTH_ENDPOINT]="Health Check"
     [RERUN_CMD]="Для повторного запуска меню"
+    [HTTP_WARNING]="HTTP небезопасен. Настройте reverse proxy с HTTPS для продакшена"
+    [HTTPS_RECOMMENDED]="Для безопасного доступа настройте домен с SSL"
 
     # Управление сервисом
     [MANAGE_TITLE]="УПРАВЛЕНИЕ СЕРВИСОМ"
@@ -2211,7 +2229,7 @@ SUBSCRIPTION_UPDATE_INTERVAL=300
 
 ### PROXY CHECK ###
 PROXY_CHECK_INTERVAL=300
-PROXY_CHECK_METHOD=ip
+PROXY_CHECK_METHOD=status
 PROXY_IP_CHECK_URL=https://api.ipify.org?format=text
 PROXY_STATUS_CHECK_URL=http://cp.cloudflare.com/generate_204
 PROXY_DOWNLOAD_URL=https://proof.ovh.net/files/1Mb.dat
@@ -2249,6 +2267,7 @@ EOF
 
 generate_docker_compose() {
     local port="${1:-$DEFAULT_PORT}"
+    local bind_host="${2:-0.0.0.0}"  # По умолчанию открыт наружу
 
     cat > "$FILE_COMPOSE" <<EOF
 services:
@@ -2259,7 +2278,7 @@ services:
     env_file:
       - .env
     ports:
-      - "127.0.0.1:\${METRICS_PORT:-${port}}:2112"
+      - "${bind_host}:\${METRICS_PORT:-${port}}:2112"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:2112/health"]
       interval: 30s
@@ -2581,7 +2600,7 @@ quick_install() {
     echo -e "${COLOR_GRAY}${LANG[ENTER_0_TO_BACK]}${COLOR_RESET}"
     echo ""
 
-    # Запрос URL подписки (с авто-добавлением https://)
+    # 1. Запрос URL подписки (с авто-добавлением https://)
     local sub_input=""
     while [ -z "$sub_input" ]; do
         reading "${LANG[ENTER_SUBSCRIPTION_URL]}" sub_input
@@ -2601,6 +2620,30 @@ quick_install() {
         sub_url="https://${sub_input}"
     else
         sub_url="$sub_input"
+    fi
+
+    # 2. Способ доступа
+    echo ""
+    echo -e "${COLOR_CYAN}${LANG[ACCESS_METHOD_TITLE]}${COLOR_RESET}"
+    echo ""
+    print_menu_item "1" "${LANG[ACCESS_DIRECT_IP]}"
+    echo -e "      ${COLOR_GRAY}${LANG[ACCESS_DIRECT_IP_DESC]}${COLOR_RESET}"
+    print_menu_item "2" "${LANG[ACCESS_REVERSE_PROXY]}"
+    echo -e "      ${COLOR_GRAY}${LANG[ACCESS_REVERSE_PROXY_DESC]}${COLOR_RESET}"
+    print_menu_item "0" "${LANG[BACK]}"
+    echo ""
+
+    local access_method
+    reading "${LANG[SELECT_OPTION]}:" access_method
+    
+    [ "$access_method" = "0" ] && return
+
+    local bind_host="0.0.0.0"
+    local setup_proxy="n"
+    
+    if [ "$access_method" = "2" ]; then
+        bind_host="127.0.0.1"
+        setup_proxy="y"
     fi
 
     echo ""
@@ -2625,7 +2668,7 @@ quick_install() {
     # Генерация конфигурации
     info "${LANG[CREATING_CONFIG]}"
     generate_env_file "$sub_url" "$DEFAULT_PORT" "true" "$METRICS_USERNAME" "$METRICS_PASSWORD" "false"
-    generate_docker_compose "$DEFAULT_PORT"
+    generate_docker_compose "$DEFAULT_PORT" "$bind_host"
 
     # Сохранение метода установки
     echo "docker" > "$FILE_METHOD"
@@ -2644,10 +2687,16 @@ quick_install() {
         warning "${LANG[ERROR_HEALTH]}"
     fi
 
+    # Настройка reverse proxy если выбрано
+    if [ "$setup_proxy" = "y" ]; then
+        setup_reverse_proxy
+    fi
+
     # Установка alias
     install_alias
 
     # Показать результат
+    show_credentials
     show_install_success "$DEFAULT_PORT"
 
     read -r -p "${LANG[PRESS_ENTER]}"
@@ -2821,7 +2870,7 @@ show_install_success() {
     echo ""
     echo -e "  ${COLOR_WHITE}${LANG[WEB_INTERFACE]}:${COLOR_RESET}"
     if [ -n "$XCHECKER_DOMAIN" ]; then
-        echo -e "    ${COLOR_CYAN}https://${XCHECKER_DOMAIN}${COLOR_RESET} ${COLOR_GRAY}(via reverse proxy)${COLOR_RESET}"
+        echo -e "    ${COLOR_CYAN}https://${XCHECKER_DOMAIN}${COLOR_RESET} ${COLOR_GREEN}(secure)${COLOR_RESET}"
     fi
     echo -e "    ${COLOR_CYAN}http://${ip}:${port}${COLOR_RESET} ${COLOR_GRAY}(direct)${COLOR_RESET}"
     echo ""
@@ -2834,6 +2883,14 @@ show_install_success() {
     echo -e "  ${COLOR_WHITE}${LANG[HEALTH_ENDPOINT]}:${COLOR_RESET}"
     echo -e "    ${COLOR_CYAN}http://${ip}:${port}/health${COLOR_RESET}"
     echo ""
+    
+    # Предупреждение о HTTP если нет домена
+    if [ -z "$XCHECKER_DOMAIN" ]; then
+        echo -e "  ${COLOR_YELLOW}⚠️  ${LANG[HTTP_WARNING]}${COLOR_RESET}"
+        echo -e "  ${COLOR_GRAY}${LANG[HTTPS_RECOMMENDED]}${COLOR_RESET}"
+        echo ""
+    fi
+    
     echo -e "  ${COLOR_WHITE}${LANG[RERUN_CMD]}:${COLOR_RESET}"
     echo -e "    ${COLOR_YELLOW}xchecker${COLOR_RESET}"
     echo ""
@@ -3151,8 +3208,8 @@ main_menu() {
         echo ""
         print_box_top 60
         print_box_empty 60
-        print_box_line_text "${COLOR_WHITE}█░█ █▀█ ▄▀█ █▄█ ▄▄ █▀▀ █░█ █▀▀ █▀▀ █▄▀ █▀▀ █▀█${COLOR_RESET}" 60
-        print_box_line_text "${COLOR_WHITE}▀▄▀ █▀▄ █▀█ ░█░ ░░ █▄▄ █▀█ ██▄ █▄▄ █░█ ██▄ █▀▄${COLOR_RESET}" 60
+        print_box_line_text "${COLOR_WHITE}▀▄▀ █▀█ ▄▀█ █▄█ ▄▄ █▀▀ █░█ █▀▀ █▀▀ █▄▀ █▀▀ █▀█${COLOR_RESET}" 60
+        print_box_line_text "${COLOR_WHITE}█░█ █▀▄ █▀█ ░█░ ░░ █▄▄ █▀█ ██▄ █▄▄ █░█ ██▄ █▀▄${COLOR_RESET}" 60
         print_box_empty 60
         print_box_line_text "${COLOR_GRAY}${LANG[VERSION]}: ${SCRIPT_VERSION}${COLOR_RESET}" 60
         print_box_empty 60
