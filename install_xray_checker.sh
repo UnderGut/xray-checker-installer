@@ -38,7 +38,7 @@ export LC_ALL=C.UTF-8
 # ВЕРСИЯ И КОНСТАНТЫ
 # ══════════════════════════════════════════════════════════════════════════════
 
-SCRIPT_VERSION="0.0.1-alpha"
+SCRIPT_VERSION="0.0.2-alpha"
 SCRIPT_NAME="install_xray_checker.sh"
 SCRIPT_URL="https://raw.githubusercontent.com/UnderGut/xray-checker-installer/main/install_xray_checker.sh"
 
