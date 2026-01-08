@@ -29,6 +29,10 @@
 
 set -e
 
+# Принудительная установка UTF-8 локали для корректного отображения Unicode символов
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ВЕРСИЯ И КОНСТАНТЫ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -57,6 +61,20 @@ DOCKER_NETWORK="remnawave-network"
 DEFAULT_PORT=2112
 
 # ══════════════════════════════════════════════════════════════════════════════
+# СИМВОЛЫ РАМКИ (ASCII для максимальной совместимости)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ASCII символы рамки (работают везде)
+BOX_TL="+"
+BOX_TR="+"
+BOX_BL="+"
+BOX_BR="+"
+BOX_H="-"
+BOX_V="|"
+# Предгенерированная линия из 60 символов
+BOX_LINE_60="------------------------------------------------------------"
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ЦВЕТА
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -69,6 +87,50 @@ COLOR_MAGENTA="\033[1;35m"
 COLOR_CYAN="\033[1;36m"
 COLOR_WHITE="\033[1;37m"
 COLOR_GRAY="\033[0;90m"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ФУНКЦИИ РИСОВАНИЯ РАМОК
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Верхняя граница рамки
+print_box_top() {
+    echo -e "${COLOR_GREEN}${BOX_TL}${BOX_LINE_60}${BOX_TR}${COLOR_RESET}"
+}
+
+# Нижняя граница рамки
+print_box_bottom() {
+    echo -e "${COLOR_GREEN}${BOX_BL}${BOX_LINE_60}${BOX_BR}${COLOR_RESET}"
+}
+
+# Строка с текстом внутри рамки (центрирование)
+print_box_line_text() {
+    local text="$1"
+    local width=60
+    
+    # Удаляем ANSI коды для подсчёта длины
+    local clean_text
+    clean_text=$(printf '%b' "$text" | sed 's/\x1b\[[0-9;]*m//g')
+    local text_len=${#clean_text}
+    
+    local padding=$(( (width - text_len) / 2 ))
+    local padding_right=$(( width - text_len - padding ))
+    
+    # Генерируем пробелы через printf
+    local spaces_left
+    local spaces_right
+    spaces_left=$(printf '%*s' "$padding" '')
+    spaces_right=$(printf '%*s' "$padding_right" '')
+    
+    echo -e "${COLOR_GREEN}${BOX_V}${COLOR_RESET}${spaces_left}${text}${spaces_right}${COLOR_GREEN}${BOX_V}${COLOR_RESET}"
+}
+
+# Пустая строка внутри рамки
+print_box_empty() {
+    local width=60
+    local spaces
+    spaces=$(printf '%*s' "$width" '')
+    echo -e "${COLOR_GREEN}${BOX_V}${COLOR_RESET}${spaces}${COLOR_GREEN}${BOX_V}${COLOR_RESET}"
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ЯЗЫКОВЫЕ СТРОКИ
@@ -113,6 +175,7 @@ LANG_EN=(
     [QUICK_INSTALL_DESC]="Just enter subscription URL — we handle the rest!"
     [CUSTOM_INSTALL_DESC]="Advanced settings: port, auth, reverse proxy"
     [ENTER_SUBSCRIPTION_URL]="Enter subscription URL:"
+    [ENTER_0_TO_BACK]="Enter 0 to go back"
     [CHOOSE_INSTALL_METHOD]="Choose installation method:"
     [INSTALL_DOCKER]="Docker"
     [INSTALL_BINARY]="Binary (systemd)"
@@ -189,14 +252,22 @@ LANG_EN=(
     [SUB_MODE_TITLE]="SUBSCRIPTION SOURCE"
     [SUB_MANUAL]="Enter URL manually"
     [SUB_API]="Remnawave API (auto-create user)"
-    [SUB_ENTER_PANEL_URL]="Enter panel URL:"
+    [SUB_ENTER_PANEL_URL]="Enter panel URL (e.g. https://panel.example.com):"
     [SUB_ENTER_API_TOKEN]="Enter API token:"
-    [SUB_USER_FOUND]="User XrayChecker found"
-    [SUB_USER_CREATED]="User XrayChecker created"
+    [SUB_USER_FOUND]="User found"
+    [SUB_USER_CREATED]="User created"
+    [SUBSCRIPTION_CONFIGURED]="Subscription configured"
 
     # Remnawave API
-    [API_DESCRIPTION]="Automatically create XrayChecker user in Remnawave panel"
-    [API_TOKEN_HINT]="Create token in panel: Settings → API Keys"
+    [API_DESCRIPTION]="Automatically create user in Remnawave panel"
+    [API_USERNAME]="XrayChecker"
+    [API_USER_PREFIX]="User"
+    [API_TOKEN_HINT_TITLE]="How to get API token:"
+    [API_TOKEN_HINT_1]="1. Open Remnawave panel in browser"
+    [API_TOKEN_HINT_2]="2. In sidebar: Remnawave Settings -> API Tokens"
+    [API_TOKEN_HINT_3]="3. Click 'Create API Token'"
+    [API_TOKEN_HINT_4]="4. Copy the generated token"
+    [API_TOKEN_CONFIRM]="Is this API token correct?"
     [API_INSTALL_TYPE]="How is Remnawave panel installed?"
     [API_INSTALL_OFFICIAL]="Official documentation (no cookie protection)"
     [API_INSTALL_EGAMES]="eGames script (with cookie protection)"
@@ -299,6 +370,7 @@ LANG_RU=(
     [QUICK_INSTALL_DESC]="Просто введите URL подписки — мы сделаем всё!"
     [CUSTOM_INSTALL_DESC]="Расширенные настройки: порт, авторизация, reverse proxy"
     [ENTER_SUBSCRIPTION_URL]="Введите URL подписки:"
+    [ENTER_0_TO_BACK]="Введите 0 для выхода"
     [CHOOSE_INSTALL_METHOD]="Выберите метод установки:"
     [INSTALL_DOCKER]="Docker"
     [INSTALL_BINARY]="Binary (systemd)"
@@ -375,14 +447,22 @@ LANG_RU=(
     [SUB_MODE_TITLE]="ИСТОЧНИК ПОДПИСКИ"
     [SUB_MANUAL]="Ввести URL вручную"
     [SUB_API]="Remnawave API (авто-создание пользователя)"
-    [SUB_ENTER_PANEL_URL]="Введите URL панели:"
+    [SUB_ENTER_PANEL_URL]="Введите URL панели (например, https://panel.example.com):"
     [SUB_ENTER_API_TOKEN]="Введите API токен:"
-    [SUB_USER_FOUND]="Пользователь XrayChecker найден"
-    [SUB_USER_CREATED]="Пользователь XrayChecker создан"
+    [SUB_USER_FOUND]="Пользователь найден"
+    [SUB_USER_CREATED]="Пользователь создан"
+    [SUBSCRIPTION_CONFIGURED]="Подписка настроена"
 
     # Remnawave API
-    [API_DESCRIPTION]="Автоматическое создание пользователя XrayChecker в панели Remnawave"
-    [API_TOKEN_HINT]="Создайте токен в панели: Settings → API Keys"
+    [API_DESCRIPTION]="Автоматическое создание пользователя в панели Remnawave"
+    [API_USERNAME]="XrayChecker"
+    [API_USER_PREFIX]="Пользователь"
+    [API_TOKEN_HINT_TITLE]="Как получить API токен:"
+    [API_TOKEN_HINT_1]="1. Откройте панель Remnawave в браузере"
+    [API_TOKEN_HINT_2]="2. В боковом меню: Настройки Remnawave -> API токены"
+    [API_TOKEN_HINT_3]="3. Нажмите 'Создать API токен'"
+    [API_TOKEN_HINT_4]="4. Скопируйте сгенерированный токен"
+    [API_TOKEN_CONFIRM]="Этот API токен верный?"
     [API_INSTALL_TYPE]="Как установлена панель Remnawave?"
     [API_INSTALL_OFFICIAL]="Официальная документация (без cookie-защиты)"
     [API_INSTALL_EGAMES]="Скрипт eGames (с cookie-защитой)"
@@ -654,6 +734,12 @@ info() {
     echo -e "${COLOR_CYAN}ℹ $1${COLOR_RESET}"
 }
 
+# Вывод ошибки и выход
+error() {
+    echo -e "${COLOR_RED}✗ $1${COLOR_RESET}" >&2
+    exit 1
+}
+
 # Очистка экрана
 clear_screen() {
     clear 2>/dev/null || printf "\033c"
@@ -675,19 +761,19 @@ print_header() {
     local padding=$(( (width - ${#title} - 2) / 2 ))
 
     echo ""
-    printf "${COLOR_GREEN}╔"
-    printf '%*s' "$width" '' | tr ' ' '═'
-    printf "╗${COLOR_RESET}\n"
+    printf "${COLOR_GREEN}${BOX_TL}"
+    printf '%*s' "$width" '' | tr ' ' '-'
+    printf "${BOX_TR}${COLOR_RESET}\n"
 
-    printf "${COLOR_GREEN}║${COLOR_RESET}"
+    printf "${COLOR_GREEN}${BOX_V}${COLOR_RESET}"
     printf '%*s' "$padding" ''
     printf "${COLOR_WHITE}${title}${COLOR_RESET}"
     printf '%*s' "$((width - padding - ${#title}))" ''
-    printf "${COLOR_GREEN}║${COLOR_RESET}\n"
+    printf "${COLOR_GREEN}${BOX_V}${COLOR_RESET}\n"
 
-    printf "${COLOR_GREEN}╚"
-    printf '%*s' "$width" '' | tr ' ' '═'
-    printf "╝${COLOR_RESET}\n"
+    printf "${COLOR_GREEN}${BOX_BL}"
+    printf '%*s' "$width" '' | tr ' ' '-'
+    printf "${BOX_BR}${COLOR_RESET}\n"
     echo ""
 }
 
@@ -755,18 +841,20 @@ select_language() {
     clear_screen
 
     echo ""
-    echo -e "${COLOR_GREEN}╔════════════════════════════════════════════════════════════╗${COLOR_RESET}"
-    echo -e "${COLOR_GREEN}║${COLOR_RESET}              ${COLOR_WHITE}SELECT LANGUAGE / ВЫБЕРИТЕ ЯЗЫК${COLOR_RESET}              ${COLOR_GREEN}║${COLOR_RESET}"
-    echo -e "${COLOR_GREEN}╚════════════════════════════════════════════════════════════╝${COLOR_RESET}"
+    print_box_top 60
+    print_box_line_text "${COLOR_WHITE}SELECT LANGUAGE / ВЫБЕРИТЕ ЯЗЫК${COLOR_RESET}" 60
+    print_box_bottom 60
     echo ""
     echo -e "  ${COLOR_YELLOW}1.${COLOR_RESET} English"
     echo -e "  ${COLOR_YELLOW}2.${COLOR_RESET} Русский"
+    echo -e "  ${COLOR_YELLOW}0.${COLOR_RESET} Exit / Выход"
     echo ""
 
     local choice
-    read -r -p "  Select / Выберите [1-2]: " choice
+    read -r -p "  Select / Выберите [0-2]: " choice
 
     case "$choice" in
+        0) clear_screen; exit 0 ;;
         1) set_language "en" ;;
         2) set_language "ru" ;;
         *) set_language "en" ;;
@@ -1040,9 +1128,27 @@ choose_subscription_source() {
     
     case "$choice" in
         1)
-            # Ручной ввод URL
+            # Ручной ввод URL (с авто-добавлением https://)
             echo ""
-            reading_url "${LANG[ENTER_SUBSCRIPTION_URL]}" SUBSCRIPTION_URL
+            local sub_input=""
+            while [ -z "$sub_input" ]; do
+                reading "${LANG[ENTER_SUBSCRIPTION_URL]}" sub_input
+                if [ -z "$sub_input" ]; then
+                    echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+                fi
+            done
+            
+            # Автоматически добавляем https:// если не указан протокол
+            if [[ ! "$sub_input" =~ ^https?:// ]] && [[ ! "$sub_input" =~ ^file:// ]] && [[ ! "$sub_input" =~ ^folder:// ]]; then
+                SUBSCRIPTION_URL="https://${sub_input}"
+            else
+                SUBSCRIPTION_URL="$sub_input"
+            fi
+            
+            echo ""
+            success "${LANG[SUBSCRIPTION_CONFIGURED]}"
+            echo -e "${COLOR_GRAY}URL: ${SUBSCRIPTION_URL}${COLOR_RESET}"
+            echo ""
             return 0
             ;;
         2)
@@ -1066,19 +1172,58 @@ setup_remnawave_api() {
     
     echo ""
     echo -e "${COLOR_WHITE}${LANG[API_DESCRIPTION]}${COLOR_RESET}"
+    echo -e "${COLOR_CYAN}${LANG[API_USER_PREFIX]}: ${COLOR_YELLOW}${LANG[API_USERNAME]}${COLOR_RESET}"
     echo ""
     
-    # Ввод URL панели
-    reading_url "${LANG[SUB_ENTER_PANEL_URL]}" PANEL_URL
+    # Ввод URL панели (с авто-добавлением https://)
+    local panel_input=""
+    while [ -z "$panel_input" ]; do
+        reading "${LANG[SUB_ENTER_PANEL_URL]}" panel_input
+        if [ -z "$panel_input" ]; then
+            echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+        fi
+    done
+    
+    # Автоматически добавляем https:// если не указан протокол
+    if [[ ! "$panel_input" =~ ^https?:// ]]; then
+        PANEL_URL="https://${panel_input}"
+    else
+        PANEL_URL="$panel_input"
+    fi
     
     # Удалить trailing slash
     PANEL_URL="${PANEL_URL%/}"
     
     echo ""
+    echo -e "${COLOR_GREEN}URL: ${COLOR_CYAN}${PANEL_URL}${COLOR_RESET}"
+    echo ""
     
-    # Ввод API токена
-    echo -e "${COLOR_GRAY}${LANG[API_TOKEN_HINT]}${COLOR_RESET}"
-    reading_required "${LANG[SUB_ENTER_API_TOKEN]}" API_TOKEN
+    # Инструкция получения API токена
+    echo -e "${COLOR_YELLOW}${LANG[API_TOKEN_HINT_TITLE]}${COLOR_RESET}"
+    echo -e "  ${COLOR_GRAY}${LANG[API_TOKEN_HINT_1]}${COLOR_RESET}"
+    echo -e "  ${COLOR_GRAY}${LANG[API_TOKEN_HINT_2]}${COLOR_RESET}"
+    echo -e "  ${COLOR_GRAY}${LANG[API_TOKEN_HINT_3]}${COLOR_RESET}"
+    echo -e "  ${COLOR_GRAY}${LANG[API_TOKEN_HINT_4]}${COLOR_RESET}"
+    echo ""
+    
+    # Ввод API токена с подтверждением
+    local token_confirmed="n"
+    while [ "$token_confirmed" != "y" ]; do
+        reading_required "${LANG[SUB_ENTER_API_TOKEN]}" API_TOKEN
+        
+        echo ""
+        echo -e "${COLOR_WHITE}${LANG[API_TOKEN_CONFIRM]}${COLOR_RESET}"
+        echo -e "  ${COLOR_CYAN}${API_TOKEN:0:20}...${COLOR_RESET}"
+        echo ""
+        
+        local confirm
+        reading_yn "" confirm "y"
+        token_confirmed="$confirm"
+        
+        if [ "$token_confirmed" != "y" ]; then
+            echo ""
+        fi
+    done
     
     echo ""
     
@@ -1086,11 +1231,14 @@ setup_remnawave_api() {
     echo -e "${COLOR_CYAN}${LANG[API_INSTALL_TYPE]}${COLOR_RESET}"
     print_menu_item "1" "${LANG[API_INSTALL_OFFICIAL]}"
     print_menu_item "2" "${LANG[API_INSTALL_EGAMES]}"
+    print_menu_item "0" "${LANG[BACK]}"
     echo ""
-    
+
     local install_type
-    reading_default "${LANG[SELECT_OPTION]}" install_type "1"
+    reading "${LANG[SELECT_OPTION]}:" install_type
     
+    [ "$install_type" = "0" ] && return 1
+
     local use_cookie="n"
     
     if [ "$install_type" = "2" ]; then
@@ -1634,17 +1782,22 @@ add_to_nginx() {
             echo ""
             echo -e "${COLOR_WHITE}1. ${LANG[SSL_EXISTING]}${COLOR_RESET}"
             echo -e "${COLOR_WHITE}2. ${LANG[SSL_OBTAIN_NEW]}${COLOR_RESET}"
+            echo -e "${COLOR_WHITE}0. ${LANG[BACK]}${COLOR_RESET}"
             echo ""
             local ssl_choice
             reading "${LANG[SELECT_OPTION]}:" ssl_choice
 
-            if [ "$ssl_choice" = "1" ]; then
-                select_existing_cert "$domain"
-                cert_path="$SELECTED_CERT_PATH"
-            else
-                choose_ssl_method "$domain"
-                cert_path="/etc/letsencrypt/live/${domain}"
-            fi
+            case "$ssl_choice" in
+                0) return 1 ;;
+                1)
+                    select_existing_cert "$domain"
+                    cert_path="$SELECTED_CERT_PATH"
+                    ;;
+                *)
+                    choose_ssl_method "$domain"
+                    cert_path="/etc/letsencrypt/live/${domain}"
+                    ;;
+            esac
         else
             # Нет сертификатов — получить новые
             choose_ssl_method "$domain"
@@ -1796,17 +1949,22 @@ install_nginx_docker() {
             echo ""
             echo -e "${COLOR_WHITE}1. ${LANG[SSL_EXISTING]}${COLOR_RESET}"
             echo -e "${COLOR_WHITE}2. ${LANG[SSL_OBTAIN_NEW]}${COLOR_RESET}"
+            echo -e "${COLOR_WHITE}0. ${LANG[SSL_SKIP]}${COLOR_RESET}"
             echo ""
             local ssl_choice
             reading "${LANG[SELECT_OPTION]}:" ssl_choice
 
-            if [ "$ssl_choice" = "1" ]; then
-                select_existing_cert "$domain"
-                cert_path="$SELECTED_CERT_PATH"
-            else
-                choose_ssl_method "$domain"
-                cert_path="/etc/letsencrypt/live/${domain}"
-            fi
+            case "$ssl_choice" in
+                0) cert_path="" ;;
+                1)
+                    select_existing_cert "$domain"
+                    cert_path="$SELECTED_CERT_PATH"
+                    ;;
+                *)
+                    choose_ssl_method "$domain"
+                    cert_path="/etc/letsencrypt/live/${domain}"
+                    ;;
+            esac
         else
             choose_ssl_method "$domain"
             cert_path="/etc/letsencrypt/live/${domain}"
@@ -2420,10 +2578,30 @@ quick_install() {
 
     echo -e "${COLOR_WHITE}${LANG[QUICK_INSTALL_DESC]}${COLOR_RESET}"
     echo ""
+    echo -e "${COLOR_GRAY}${LANG[ENTER_0_TO_BACK]}${COLOR_RESET}"
+    echo ""
 
-    # Запрос URL подписки
+    # Запрос URL подписки (с авто-добавлением https://)
+    local sub_input=""
+    while [ -z "$sub_input" ]; do
+        reading "${LANG[ENTER_SUBSCRIPTION_URL]}" sub_input
+        if [ -z "$sub_input" ]; then
+            echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+        fi
+    done
+    
+    # Проверка на выход
+    if [ "$sub_input" = "0" ]; then
+        return
+    fi
+    
+    # Автоматически добавляем https:// если не указан протокол
     local sub_url
-    reading_url "${LANG[ENTER_SUBSCRIPTION_URL]}" sub_url
+    if [[ ! "$sub_input" =~ ^https?:// ]] && [[ ! "$sub_input" =~ ^file:// ]] && [[ ! "$sub_input" =~ ^folder:// ]]; then
+        sub_url="https://${sub_input}"
+    else
+        sub_url="$sub_input"
+    fi
 
     echo ""
     info "${LANG[CHECKING_SYSTEM]}"
@@ -2486,20 +2664,26 @@ custom_install() {
     echo -e "${COLOR_CYAN}${LANG[CHOOSE_INSTALL_METHOD]}${COLOR_RESET}"
     print_menu_item "1" "${LANG[INSTALL_DOCKER]}" "${LANG[RECOMMENDED]}"
     print_menu_item "2" "${LANG[INSTALL_BINARY]}"
+    print_menu_item "0" "${LANG[BACK]}"
     echo ""
 
     local install_method
-    reading_default "${LANG[SELECT_OPTION]}" install_method "1"
+    reading "${LANG[SELECT_OPTION]}:" install_method
+    
+    [ "$install_method" = "0" ] && return
 
     # 2. Источник подписки (ручной ввод или API)
     echo ""
     echo -e "${COLOR_CYAN}${LANG[SUB_MODE_TITLE]}${COLOR_RESET}"
     print_menu_item "1" "${LANG[SUB_MANUAL]}"
     print_menu_item "2" "${LANG[SUB_API]}"
+    print_menu_item "0" "${LANG[BACK]}"
     echo ""
 
     local sub_source
-    reading_default "${LANG[SELECT_OPTION]}" sub_source "1"
+    reading "${LANG[SELECT_OPTION]}:" sub_source
+    
+    [ "$sub_source" = "0" ] && return
 
     local sub_url=""
 
@@ -2512,7 +2696,7 @@ custom_install() {
                 return 1
             fi
             ;;
-        *)
+        1|*)
             # Ручной ввод
             echo ""
             reading_url "${LANG[ENTER_SUBSCRIPTION_URL]}" sub_url
@@ -2613,9 +2797,9 @@ custom_install() {
 
 show_credentials() {
     echo ""
-    echo -e "${COLOR_GREEN}╔════════════════════════════════════════════════════════════╗${COLOR_RESET}"
-    echo -e "${COLOR_GREEN}║${COLOR_RESET}            ${COLOR_WHITE}🔐 ${LANG[CREDENTIALS_TITLE]}${COLOR_RESET}                        ${COLOR_GREEN}║${COLOR_RESET}"
-    echo -e "${COLOR_GREEN}╚════════════════════════════════════════════════════════════╝${COLOR_RESET}"
+    print_box_top 60
+    print_box_line_text "${COLOR_WHITE}🔐 ${LANG[CREDENTIALS_TITLE]}${COLOR_RESET}" 60
+    print_box_bottom 60
     echo ""
     echo -e "  ${COLOR_WHITE}${LANG[USERNAME]}:${COLOR_RESET}  ${COLOR_YELLOW}${METRICS_USERNAME}${COLOR_RESET}"
     echo -e "  ${COLOR_WHITE}${LANG[PASSWORD]}:${COLOR_RESET}  ${COLOR_YELLOW}${METRICS_PASSWORD}${COLOR_RESET}"
@@ -2631,9 +2815,9 @@ show_install_success() {
     ip=$(get_server_ip)
 
     echo ""
-    echo -e "${COLOR_GREEN}╔════════════════════════════════════════════════════════════╗${COLOR_RESET}"
-    echo -e "${COLOR_GREEN}║${COLOR_RESET}            ${COLOR_WHITE}✅ ${LANG[INSTALL_COMPLETE]}${COLOR_RESET}                         ${COLOR_GREEN}║${COLOR_RESET}"
-    echo -e "${COLOR_GREEN}╚════════════════════════════════════════════════════════════╝${COLOR_RESET}"
+    print_box_top 60
+    print_box_line_text "${COLOR_WHITE}✅ ${LANG[INSTALL_COMPLETE]}${COLOR_RESET}" 60
+    print_box_bottom 60
     echo ""
     echo -e "  ${COLOR_WHITE}${LANG[WEB_INTERFACE]}:${COLOR_RESET}"
     if [ -n "$XCHECKER_DOMAIN" ]; then
@@ -2965,14 +3149,14 @@ main_menu() {
         clear_screen
 
         echo ""
-        echo -e "${COLOR_GREEN}╔════════════════════════════════════════════════════════════╗${COLOR_RESET}"
-        echo -e "${COLOR_GREEN}║${COLOR_RESET}                                                            ${COLOR_GREEN}║${COLOR_RESET}"
-        echo -e "${COLOR_GREEN}║${COLOR_RESET}        ${COLOR_WHITE}█░█ █▀█ ▄▀█ █▄█ ▄▄ █▀▀ █░█ █▀▀ █▀▀ █▄▀ █▀▀ █▀█${COLOR_RESET}       ${COLOR_GREEN}║${COLOR_RESET}"
-        echo -e "${COLOR_GREEN}║${COLOR_RESET}        ${COLOR_WHITE}▀▄▀ █▀▄ █▀█ ░█░ ░░ █▄▄ █▀█ ██▄ █▄▄ █░█ ██▄ █▀▄${COLOR_RESET}       ${COLOR_GREEN}║${COLOR_RESET}"
-        echo -e "${COLOR_GREEN}║${COLOR_RESET}                                                            ${COLOR_GREEN}║${COLOR_RESET}"
-        echo -e "${COLOR_GREEN}║${COLOR_RESET}                  ${COLOR_GRAY}${LANG[VERSION]}: ${SCRIPT_VERSION}${COLOR_RESET}                            ${COLOR_GREEN}║${COLOR_RESET}"
-        echo -e "${COLOR_GREEN}║${COLOR_RESET}                                                            ${COLOR_GREEN}║${COLOR_RESET}"
-        echo -e "${COLOR_GREEN}╚════════════════════════════════════════════════════════════╝${COLOR_RESET}"
+        print_box_top 60
+        print_box_empty 60
+        print_box_line_text "${COLOR_WHITE}█░█ █▀█ ▄▀█ █▄█ ▄▄ █▀▀ █░█ █▀▀ █▀▀ █▄▀ █▀▀ █▀█${COLOR_RESET}" 60
+        print_box_line_text "${COLOR_WHITE}▀▄▀ █▀▄ █▀█ ░█░ ░░ █▄▄ █▀█ ██▄ █▄▄ █░█ ██▄ █▀▄${COLOR_RESET}" 60
+        print_box_empty 60
+        print_box_line_text "${COLOR_GRAY}${LANG[VERSION]}: ${SCRIPT_VERSION}${COLOR_RESET}" 60
+        print_box_empty 60
+        print_box_bottom 60
         echo ""
 
         print_menu_item "1" "🚀 ${LANG[MENU_QUICK_INSTALL]}" "${LANG[RECOMMENDED]}"
