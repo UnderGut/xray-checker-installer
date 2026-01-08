@@ -1359,8 +1359,8 @@ detect_reverse_proxy() {
         return 0
     fi
 
-    # 4. Проверка системного Nginx
-    if systemctl is-active --quiet nginx 2>/dev/null; then
+    # 4. Проверка системного Nginx (с защитой от ошибок)
+    if command -v systemctl &>/dev/null && systemctl is-active --quiet nginx 2>/dev/null; then
         DETECTED_PROXY="system_nginx"
         DETECTED_PROXY_PATH="/etc/nginx/sites-available/"
         [ -d "/etc/letsencrypt/live" ] && DETECTED_CERTS="letsencrypt"
@@ -1368,25 +1368,26 @@ detect_reverse_proxy() {
     fi
 
     # 5. Проверка Docker nginx
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qiE "nginx|remnawave-nginx"; then
+    if command -v docker &>/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -qiE "nginx|remnawave-nginx"; then
         DETECTED_PROXY="docker_nginx"
         return 0
     fi
 
-    # 6. Проверка системного Caddy
-    if systemctl is-active --quiet caddy 2>/dev/null; then
+    # 6. Проверка системного Caddy (с защитой от ошибок)
+    if command -v systemctl &>/dev/null && systemctl is-active --quiet caddy 2>/dev/null; then
         DETECTED_PROXY="system_caddy"
         DETECTED_PROXY_PATH="/etc/caddy/Caddyfile"
         return 0
     fi
 
     # 7. Проверка Docker caddy
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qiE "caddy|remnawave-caddy"; then
+    if command -v docker &>/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -qiE "caddy|remnawave-caddy"; then
         DETECTED_PROXY="docker_caddy"
         return 0
     fi
 
-    return 1
+    # Ничего не найдено — это нормально
+    return 0
 }
 
 get_proxy_display_name() {
