@@ -1,6 +1,6 @@
 # xray-checker-installer
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-0.0.4--alpha-orange.svg)](https://github.com/UnderGut/xray-checker-installer)
 
 Auto-installer for [xray-checker](https://github.com/kutovoys/xray-checker) — a monitoring tool for proxy servers (VLESS, VMess, Trojan, Shadowsocks).
@@ -159,7 +159,7 @@ Special thanks to **eGames** — the `install_remnawave.sh` script served as the
 
 ## 📄 License
 
-This project is licensed under the [AGPL-3.0 License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
 
 ## 🤝 Contributing
 
@@ -258,4 +258,4 @@ xray_checker_install
 
 ## 📄 Лицензия
 
-Проект лицензирован под [AGPL-3.0 License](LICENSE).
+Проект лицензирован под [MIT License](LICENSE).
