@@ -122,7 +122,6 @@ Supports both official Remnawave installation and [eGames script](https://github
 | Existing Remnawave | Add to existing nginx/caddy config |
 | eGames installation | Use existing certificates and nginx |
 | Own nginx/caddy | Show config block to copy |
-| No proxy needed | Direct access via `http://IP:2112` |
 
 ## 📊 Monitoring Integration
 
@@ -244,7 +243,6 @@ xray_checker_install
 | Есть Remnawave | Добавление в существующий конфиг |
 | Установка eGames | Использование существующих сертификатов |
 | Свой nginx/caddy | Показ конфига для копирования |
-| Без proxy | Прямой доступ через `http://IP:2112` |
 
 ## 🙏 Благодарности
 
