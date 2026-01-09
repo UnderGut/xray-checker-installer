@@ -27,6 +27,11 @@
 #
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Отключаем bracket paste mode глобально (предотвращает задваивание при вставке)
+printf '\e[?2004l' 2>/dev/null
+# Также через bind если доступен
+bind 'set enable-bracketed-paste off' 2>/dev/null
+
 # Отключаем автозавершение при ошибках (интерактивный скрипт)
 # set -e  # НЕ используем - вызывает проблемы с проверочными командами
 
@@ -38,25 +43,25 @@ export LC_ALL=C.UTF-8
 # ВЕРСИЯ И КОНСТАНТЫ
 # ══════════════════════════════════════════════════════════════════════════════
 
-SCRIPT_VERSION="0.0.2-alpha"
+SCRIPT_VERSION="0.0.3-alpha"
 SCRIPT_NAME="install_xray_checker.sh"
 SCRIPT_URL="https://raw.githubusercontent.com/UnderGut/xray-checker-installer/main/install_xray_checker.sh"
 
 # Директории
 DIR_XRAY_CHECKER="/opt/xray-checker/"
+DIR_INSTALLER_CONFIG="/etc/xray-checker/"
 DIR_CERTS="${DIR_XRAY_CHECKER}certs/"
 
 # Файлы конфигурации
 FILE_ENV="${DIR_XRAY_CHECKER}.env"
 FILE_COMPOSE="${DIR_XRAY_CHECKER}docker-compose.yml"
-FILE_LANG="${DIR_XRAY_CHECKER}selected_language"
-FILE_METHOD="${DIR_XRAY_CHECKER}install_method"
-FILE_API_CONFIG="${DIR_XRAY_CHECKER}api_config.env"
+FILE_NGINX_CONF="${DIR_XRAY_CHECKER}nginx.conf"
+FILE_INSTALLER_CONF="${DIR_INSTALLER_CONFIG}installer.conf"
 
 # Docker
 DOCKER_IMAGE="kutovoys/xray-checker:latest"
 DOCKER_CONTAINER="xray-checker"
-DOCKER_NETWORK="remnawave-network"
+DOCKER_NETWORK="xray-checker-network"
 
 # Порт по умолчанию
 DEFAULT_PORT=2112
@@ -161,8 +166,17 @@ LANG_EN=(
     [RECOMMENDED]="recommended"
     [FIELD_REQUIRED]="This field is required"
     [INVALID_URL]="Invalid URL format"
+    [INVALID_URL_FORMAT]="Invalid URL. Use https://, file:// or folder://"
     [INVALID_NUMBER]="Please enter a valid number"
     [INVALID_YN]="Please enter y or n"
+    [CHECKING_URL]="Checking URL"
+    [URL_OK]="URL is accessible"
+    [URL_UNREACHABLE]="URL unreachable"
+    [URL_ERROR]="URL error"
+    [FILE_NOT_FOUND]="File not found"
+    [FILE_OK]="File exists"
+    [FOLDER_NOT_FOUND]="Folder not found"
+    [FOLDER_OK]="Folder exists"
 
     # Main Menu
     [MENU_QUICK_INSTALL]="Quick Install"
@@ -170,12 +184,13 @@ LANG_EN=(
     [MENU_MANAGE]="Manage Service"
     [MENU_UPDATE_SCRIPT]="Update Script"
     [MENU_UNINSTALL]="Uninstall"
+    [MENU_LANGUAGE]="Language"
 
     # Installation
     [INSTALL_TITLE]="INSTALLATION"
-    [QUICK_INSTALL_DESC]="Just enter subscription URL — we handle the rest!"
+    [QUICK_INSTALL_DESC]="URL, file:// or folder://"
     [CUSTOM_INSTALL_DESC]="Advanced settings: port, auth, reverse proxy"
-    [ENTER_SUBSCRIPTION_URL]="Enter subscription URL:"
+    [ENTER_SUBSCRIPTION]="Subscription:"
     [ENTER_0_TO_BACK]="Enter 0 to go back"
     [CHOOSE_INSTALL_METHOD]="Choose installation method:"
     [INSTALL_DOCKER]="Docker"
@@ -199,13 +214,6 @@ LANG_EN=(
     [STARTING_SERVICE]="Starting service..."
     [CHECKING_HEALTH]="Checking service health..."
 
-    # Access Method
-    [ACCESS_METHOD_TITLE]="How do you want to access xray-checker?"
-    [ACCESS_DIRECT_IP]="Direct access via IP:PORT (HTTP)"
-    [ACCESS_DIRECT_IP_DESC]="Simple setup, no domain required"
-    [ACCESS_REVERSE_PROXY]="Via domain with HTTPS"
-    [ACCESS_REVERSE_PROXY_DESC]="Secure, requires domain and SSL certificate"
-
     # Success
     [INSTALL_COMPLETE]="INSTALLATION COMPLETE"
     [WEB_INTERFACE]="Web Interface"
@@ -226,7 +234,10 @@ LANG_EN=(
     [SERVICE_EDIT_ENV]="Edit Configuration"
     [SERVICE_RUNNING]="Service is running"
     [SERVICE_STOPPED]="Service is stopped"
+    [SERVICE_NOT_RUNNING]="Service is not running. Start it first."
     [SERVICE_NOT_INSTALLED]="Service is not installed"
+    [CHECKER_VERSION]="xray-checker"
+    [NOT_INSTALLED]="not installed"
 
     # Update
     [UPDATE_CHECKING]="Checking for updates..."
@@ -252,11 +263,24 @@ LANG_EN=(
     [PROXY_TITLE]="REVERSE PROXY SETUP"
     [PROXY_DETECTED]="Detected"
     [PROXY_NONE]="No reverse proxy detected"
-    [PROXY_SKIP]="Skip (use IP:PORT directly)"
     [PROXY_CADDY]="Install Caddy (auto SSL)"
     [PROXY_NGINX]="Install Nginx"
     [PROXY_USE_EXISTING]="Use existing"
-    [PROXY_ENTER_DOMAIN]="Enter domain for xray-checker:"
+    [PROXY_ADD_TO_EXISTING]="Add domain to"
+    [PROXY_ENTER_DOMAIN]="Enter domain:"
+    [DETECTING]="Detecting environment"
+    [DOMAIN_CHECKING]="Checking domain DNS..."
+    [DOMAIN_OK]="Domain points to this server"
+    [DOMAIN_MISMATCH]="Domain points to different IP"
+    [DOMAIN_NOT_RESOLVED]="Domain could not be resolved. Create A-record pointing to server IP"
+    [DOMAIN_CLOUDFLARE]="Domain is proxied through Cloudflare"
+    [DOMAIN_CLOUDFLARE_HINT]="Use Cloudflare DNS-01 for SSL certificate"
+    [DOMAIN_SERVER_IP]="Server IP"
+    [DOMAIN_DNS_IP]="Domain DNS"
+    [DOMAIN_CONFIRM]="Continue with this domain?"
+    [DOMAIN_CHANGE]="Enter different domain"
+    [DOMAIN_BACK]="Go back"
+    [DOMAIN_ALREADY_EXISTS]="Domain already configured in nginx"
 
     # Subscription
     [SUB_MODE_TITLE]="SUBSCRIPTION SOURCE"
@@ -283,18 +307,47 @@ LANG_EN=(
     [API_INSTALL_EGAMES]="eGames script (with cookie protection)"
     [API_EXTRACTING_COOKIE]="Searching for cookie in nginx.conf..."
     [API_COOKIE_NOT_FOUND]="Cookie not found automatically"
-    [API_COOKIE_INFO]="eGames installation uses nginx cookie protection"
-    [API_COOKIE_HINT]="SSH: grep -A2 'map \$http_cookie' /opt/remnawave/nginx.conf"
-    [API_ENTER_COOKIE_NAME]="Enter cookie name:"
-    [API_ENTER_COOKIE_VALUE]="Enter cookie value:"
+    [API_COOKIE_INPUT_MODE]="How do you want to enter cookie data?"
+    [API_COOKIE_MODE_URL]="Enter authorization URL from panel"
+    [API_COOKIE_MODE_NGINX]="Paste nginx config block with cookie"
+    [API_ENTER_AUTH_URL]="Enter authorization URL from panel:"
+    [API_AUTH_URL_HINT]="URL format: https://domain/auth/login?xxx=yyy"
+    [API_AUTH_URL_EXAMPLE]="Example: https://panel.example.com/auth/login?aEmFnBcC=WbYWpixX"
+    [API_AUTH_URL_INVALID]="Invalid URL format. Must contain ?name=value"
+    [API_AUTH_URL_PARSED]="Cookie extracted from URL"
+    [API_NGINX_BLOCK_HINT]="Paste nginx config block containing 'map \$http_cookie' (press Enter twice to finish):"
+    [API_NGINX_BLOCK_EXAMPLE]="Example: map \$http_cookie \$auth_cookie { default 0; \"~*aEmFnBcC=WbYWpixX\" 1; }"
+    [API_NGINX_BLOCK_PARSED]="Cookie extracted from nginx config"
+    [API_NGINX_BLOCK_INVALID]="Could not extract cookie from nginx block"
     [API_CHECKING_USER]="Checking XrayChecker user..."
-    [API_USER_FOUND]="User XrayChecker found"
+    [API_USER_FOUND]="User XrayChecker already exists in panel"
+    [API_USER_FOUND_HINT]="Using existing subscription. Squads not modified."
+    [API_USER_FOUND_CHOICE]="User XrayChecker already exists. What to do?"
+    [API_USER_USE_EXISTING]="Use existing user"
+    [API_USER_RECREATE]="Delete and create new (will assign squads)"
+    [API_USER_DELETING]="Deleting existing user..."
+    [API_USER_DELETED]="User deleted"
     [API_CREATING_USER]="Creating XrayChecker user..."
     [API_USER_CREATED]="User XrayChecker created"
+    [API_GETTING_SQUADS]="Getting Internal Squads..."
+    [API_SQUADS_FOUND]="Squads found"
+    [API_NO_SQUADS]="No Internal Squads found. User will be created without squads."
+    [API_SQUADS_SELECT_MODE]="Assign squads to XrayChecker user:"
+    [API_SQUADS_ALL]="Add all squads"
+    [API_SQUADS_SELECT]="Select specific squads"
+    [API_SQUADS_NONE]="No squads (skip)"
+    [API_SQUADS_LIST]="Available squads:"
+    [API_SQUADS_ENTER_NUMBERS]="Enter squad numbers separated by space (e.g. 1 3 5):"
+    [API_SQUADS_SELECTED]="Selected squads"
+    [API_SQUADS_HINT]="You can manage squads later in Remnawave panel"
     [API_SUCCESS]="Subscription obtained via API"
     [API_FAILED]="Failed to get subscription via API"
     [API_FALLBACK_MANUAL]="Enter subscription URL manually?"
     [API_ERROR]="API Error"
+
+    # Reverse Proxy errors
+    [PROXY_ALREADY_CONFIGURED]="Reverse proxy is already configured for xray-checker"
+    [PROXY_ALREADY_HINT]="To add another domain, edit nginx.conf manually or reinstall"
 
     # SSL Certificates
     [SSL_TITLE]="SSL CERTIFICATE SETUP"
@@ -311,9 +364,17 @@ LANG_EN=(
     [SSL_CERTS_FOUND]="Existing certificates found:"
     [SSL_OBTAIN_NEW]="Obtain new certificate"
     [SSL_SKIP]="Skip SSL setup"
+    [SSL_WILDCARD_FOUND]="Wildcard certificate found"
+    [SSL_WILDCARD_AUTO]="Using wildcard certificate automatically"
     [SSL_ENTER_CF_TOKEN]="Enter Cloudflare API Token:"
     [SSL_ENTER_GCORE_TOKEN]="Enter Gcore API Token:"
-    [SSL_ENTER_EMAIL]="Enter email for Let's Encrypt:"
+    [SSL_ENTER_EMAIL]="Enter email:"
+    [SSL_EMAIL_HINT]="Used for expiry reminders, not spam"
+    [SSL_INVALID_EMAIL]="Invalid email format"
+    [SSL_VALIDATING_CF]="Validating Cloudflare API token..."
+    [SSL_CF_VALID]="Cloudflare API token is valid"
+    [SSL_CF_INVALID]="Invalid Cloudflare API token"
+    [SSL_CF_RETRY]="Please enter valid token"
     [SSL_SELECT_CERT]="Select certificate"
     [SSL_ENTER_CERT_NUM]="Enter number:"
     [SSL_INSTALLING_CERTBOT]="Installing certbot..."
@@ -365,8 +426,17 @@ LANG_RU=(
     [RECOMMENDED]="рекомендуется"
     [FIELD_REQUIRED]="Это поле обязательно"
     [INVALID_URL]="Неверный формат URL"
+    [INVALID_URL_FORMAT]="Неверный URL. Используйте https://, file:// или folder://"
     [INVALID_NUMBER]="Введите корректное число"
     [INVALID_YN]="Введите y или n"
+    [CHECKING_URL]="Проверка URL"
+    [URL_OK]="URL доступен"
+    [URL_UNREACHABLE]="URL недоступен"
+    [URL_ERROR]="Ошибка URL"
+    [FILE_NOT_FOUND]="Файл не найден"
+    [FILE_OK]="Файл найден"
+    [FOLDER_NOT_FOUND]="Папка не найдена"
+    [FOLDER_OK]="Папка найдена"
 
     # Главное меню
     [MENU_QUICK_INSTALL]="Быстрая установка"
@@ -374,12 +444,13 @@ LANG_RU=(
     [MENU_MANAGE]="Управление сервисом"
     [MENU_UPDATE_SCRIPT]="Обновить скрипт"
     [MENU_UNINSTALL]="Удаление"
+    [MENU_LANGUAGE]="Язык"
 
     # Установка
     [INSTALL_TITLE]="УСТАНОВКА"
-    [QUICK_INSTALL_DESC]="Просто введите URL подписки — мы сделаем всё!"
+    [QUICK_INSTALL_DESC]="URL, file:// или folder://"
     [CUSTOM_INSTALL_DESC]="Расширенные настройки: порт, авторизация, reverse proxy"
-    [ENTER_SUBSCRIPTION_URL]="Введите URL подписки:"
+    [ENTER_SUBSCRIPTION]="Подписка:"
     [ENTER_0_TO_BACK]="Введите 0 для выхода"
     [CHOOSE_INSTALL_METHOD]="Выберите метод установки:"
     [INSTALL_DOCKER]="Docker"
@@ -403,13 +474,6 @@ LANG_RU=(
     [STARTING_SERVICE]="Запуск сервиса..."
     [CHECKING_HEALTH]="Проверка состояния сервиса..."
 
-    # Способ доступа
-    [ACCESS_METHOD_TITLE]="Как вы хотите получать доступ к xray-checker?"
-    [ACCESS_DIRECT_IP]="Напрямую по IP:PORT (HTTP)"
-    [ACCESS_DIRECT_IP_DESC]="Простая настройка, домен не нужен"
-    [ACCESS_REVERSE_PROXY]="Через домен с HTTPS"
-    [ACCESS_REVERSE_PROXY_DESC]="Безопасно, требуется домен и SSL сертификат"
-
     # Успех
     [INSTALL_COMPLETE]="УСТАНОВКА ЗАВЕРШЕНА"
     [WEB_INTERFACE]="Веб-интерфейс"
@@ -430,7 +494,10 @@ LANG_RU=(
     [SERVICE_EDIT_ENV]="Редактировать конфигурацию"
     [SERVICE_RUNNING]="Сервис запущен"
     [SERVICE_STOPPED]="Сервис остановлен"
+    [SERVICE_NOT_RUNNING]="Сервис не запущен. Сначала запустите его."
     [SERVICE_NOT_INSTALLED]="Сервис не установлен"
+    [CHECKER_VERSION]="xray-checker"
+    [NOT_INSTALLED]="не установлен"
 
     # Обновление
     [UPDATE_CHECKING]="Проверка обновлений..."
@@ -456,11 +523,24 @@ LANG_RU=(
     [PROXY_TITLE]="НАСТРОЙКА REVERSE PROXY"
     [PROXY_DETECTED]="Обнаружен"
     [PROXY_NONE]="Reverse proxy не обнаружен"
-    [PROXY_SKIP]="Пропустить (использовать IP:PORT)"
     [PROXY_CADDY]="Установить Caddy (авто SSL)"
     [PROXY_NGINX]="Установить Nginx"
     [PROXY_USE_EXISTING]="Использовать существующий"
-    [PROXY_ENTER_DOMAIN]="Введите домен для xray-checker:"
+    [PROXY_ADD_TO_EXISTING]="Добавить домен в"
+    [PROXY_ENTER_DOMAIN]="Введите домен:"
+    [DETECTING]="Определение окружения"
+    [DOMAIN_CHECKING]="Проверка DNS домена..."
+    [DOMAIN_OK]="Домен указывает на этот сервер"
+    [DOMAIN_MISMATCH]="Домен указывает на другой IP"
+    [DOMAIN_NOT_RESOLVED]="Домен не найден. Создайте A-запись, указывающую на IP сервера"
+    [DOMAIN_CLOUDFLARE]="Домен проксируется через Cloudflare"
+    [DOMAIN_CLOUDFLARE_HINT]="Используйте Cloudflare DNS-01 для SSL сертификата"
+    [DOMAIN_SERVER_IP]="IP сервера"
+    [DOMAIN_DNS_IP]="DNS домена"
+    [DOMAIN_CONFIRM]="Продолжить с этим доменом?"
+    [DOMAIN_CHANGE]="Ввести другой домен"
+    [DOMAIN_BACK]="Вернуться назад"
+    [DOMAIN_ALREADY_EXISTS]="Домен уже настроен в nginx"
 
     # Подписка
     [SUB_MODE_TITLE]="ИСТОЧНИК ПОДПИСКИ"
@@ -487,18 +567,47 @@ LANG_RU=(
     [API_INSTALL_EGAMES]="Скрипт eGames (с cookie-защитой)"
     [API_EXTRACTING_COOKIE]="Поиск cookie в nginx.conf..."
     [API_COOKIE_NOT_FOUND]="Cookie не найдены автоматически"
-    [API_COOKIE_INFO]="Установка eGames использует cookie-защиту nginx"
-    [API_COOKIE_HINT]="SSH: grep -A2 'map \$http_cookie' /opt/remnawave/nginx.conf"
-    [API_ENTER_COOKIE_NAME]="Введите имя cookie:"
-    [API_ENTER_COOKIE_VALUE]="Введите значение cookie:"
+    [API_COOKIE_INPUT_MODE]="Как вы хотите ввести данные cookie?"
+    [API_COOKIE_MODE_URL]="Ввести ссылку авторизации из панели"
+    [API_COOKIE_MODE_NGINX]="Вставить блок nginx config с cookie"
+    [API_ENTER_AUTH_URL]="Введите ссылку авторизации из панели:"
+    [API_AUTH_URL_HINT]="Формат: https://domain/auth/login?xxx=yyy"
+    [API_AUTH_URL_EXAMPLE]="Пример: https://panel.example.com/auth/login?aEmFnBcC=WbYWpixX"
+    [API_AUTH_URL_INVALID]="Неверный формат URL. Должен содержать ?имя=значение"
+    [API_AUTH_URL_PARSED]="Cookie извлечены из URL"
+    [API_NGINX_BLOCK_HINT]="Вставьте блок nginx конфига с 'map \$http_cookie' (нажмите Enter дважды для завершения):"
+    [API_NGINX_BLOCK_EXAMPLE]="Пример: map \$http_cookie \$auth_cookie { default 0; \"~*aEmFnBcC=WbYWpixX\" 1; }"
+    [API_NGINX_BLOCK_PARSED]="Cookie извлечены из nginx конфига"
+    [API_NGINX_BLOCK_INVALID]="Не удалось извлечь cookie из nginx блока"
     [API_CHECKING_USER]="Проверка пользователя XrayChecker..."
-    [API_USER_FOUND]="Пользователь XrayChecker найден"
+    [API_USER_FOUND]="Пользователь XrayChecker уже существует в панели"
+    [API_USER_FOUND_HINT]="Используется существующая подписка. Сквады не изменены."
+    [API_USER_FOUND_CHOICE]="Пользователь XrayChecker уже существует. Что сделать?"
+    [API_USER_USE_EXISTING]="Использовать существующего"
+    [API_USER_RECREATE]="Удалить и создать заново (назначит сквады)"
+    [API_USER_DELETING]="Удаление существующего пользователя..."
+    [API_USER_DELETED]="Пользователь удалён"
     [API_CREATING_USER]="Создание пользователя XrayChecker..."
     [API_USER_CREATED]="Пользователь XrayChecker создан"
+    [API_GETTING_SQUADS]="Получение Internal Squads..."
+    [API_SQUADS_FOUND]="Найдено сквадов"
+    [API_NO_SQUADS]="Internal Squads не найдены. Пользователь будет создан без сквадов."
+    [API_SQUADS_SELECT_MODE]="Назначение сквадов пользователю XrayChecker:"
+    [API_SQUADS_ALL]="Добавить все сквады"
+    [API_SQUADS_SELECT]="Выбрать конкретные сквады"
+    [API_SQUADS_NONE]="Без сквадов (пропустить)"
+    [API_SQUADS_LIST]="Доступные сквады:"
+    [API_SQUADS_ENTER_NUMBERS]="Введите номера сквадов через пробел (например, 1 3 5):"
+    [API_SQUADS_SELECTED]="Выбрано сквадов"
+    [API_SQUADS_HINT]="Управлять сквадами можно позже в панели Remnawave"
     [API_SUCCESS]="Подписка получена через API"
     [API_FAILED]="Ошибка получения подписки через API"
     [API_FALLBACK_MANUAL]="Ввести URL подписки вручную?"
     [API_ERROR]="Ошибка API"
+
+    # Reverse Proxy errors
+    [PROXY_ALREADY_CONFIGURED]="Reverse proxy для xray-checker уже настроен"
+    [PROXY_ALREADY_HINT]="Для добавления другого домена отредактируйте nginx.conf вручную или переустановите"
 
     # SSL Сертификаты
     [SSL_TITLE]="НАСТРОЙКА SSL СЕРТИФИКАТА"
@@ -515,9 +624,17 @@ LANG_RU=(
     [SSL_EXISTING]="Использовать существующий сертификат"
     [SSL_OBTAIN_NEW]="Получить новый сертификат"
     [SSL_SKIP]="Пропустить настройку SSL"
+    [SSL_WILDCARD_FOUND]="Найден wildcard сертификат"
+    [SSL_WILDCARD_AUTO]="Используем wildcard сертификат автоматически"
     [SSL_ENTER_CF_TOKEN]="Введите Cloudflare API Token:"
     [SSL_ENTER_GCORE_TOKEN]="Введите Gcore API Token:"
-    [SSL_ENTER_EMAIL]="Введите email для Let's Encrypt:"
+    [SSL_ENTER_EMAIL]="Введите email:"
+    [SSL_EMAIL_HINT]="Для напоминаний об истечении, без спама"
+    [SSL_INVALID_EMAIL]="Неверный формат email"
+    [SSL_VALIDATING_CF]="Проверка Cloudflare API токена..."
+    [SSL_CF_VALID]="Cloudflare API токен действителен"
+    [SSL_CF_INVALID]="Недействительный Cloudflare API токен"
+    [SSL_CF_RETRY]="Введите корректный токен"
     [SSL_SELECT_CERT]="Выберите сертификат"
     [SSL_ENTER_CERT_NUM]="Введите номер:"
     [SSL_INSTALLING_CERTBOT]="Установка certbot..."
@@ -571,16 +688,20 @@ sanitize_input() {
     printf '%s' "$_val"
 }
 
+# Форматированный prompt в стиле [?] Text (как в install_remnawave.sh)
+question() {
+    echo -e "${COLOR_GREEN}[?]${COLOR_RESET} ${COLOR_YELLOW}$*${COLOR_RESET}"
+}
+
 # Чтение ввода с поддержкой редактирования
 reading() {
-    local prompt="$1"
+    local prompt="$(question "$1") "
     local varname="$2"
-    local value
-
-    read -e -r -p "$prompt " value
-    value=$(sanitize_input "$value")
-
-    printf -v "$varname" '%s' "$value"
+    read -rep "$prompt" "$varname"
+    # Очищаем ввод
+    local cleaned
+    cleaned=$(sanitize_input "${!varname}")
+    printf -v "$varname" '%s' "$cleaned"
 }
 
 # Чтение обязательного поля
@@ -590,41 +711,12 @@ reading_required() {
     local value=""
 
     while [ -z "$value" ]; do
-        read -e -r -p "$prompt " value
-        value=$(sanitize_input "$value")
+        reading "$prompt" value
 
         if [ -z "$value" ]; then
             echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
         fi
     done
-
-    printf -v "$varname" '%s' "$value"
-}
-
-# Чтение пароля (скрытый ввод)
-reading_secret() {
-    local prompt="$1"
-    local varname="$2"
-    local value
-
-    read -e -r -s -p "$prompt " value
-    echo
-    value=$(sanitize_input "$value")
-
-    printf -v "$varname" '%s' "$value"
-}
-
-# Чтение с значением по умолчанию
-reading_default() {
-    local prompt="$1"
-    local varname="$2"
-    local default="$3"
-    local value
-
-    read -e -r -p "$prompt [$default]: " value
-    value=$(sanitize_input "$value")
-
-    [ -z "$value" ] && value="$default"
 
     printf -v "$varname" '%s' "$value"
 }
@@ -636,8 +728,7 @@ reading_url() {
     local value=""
 
     while true; do
-        read -e -r -p "$prompt " value
-        value=$(sanitize_input "$value")
+        reading "$prompt" value
 
         if [ -z "$value" ]; then
             echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
@@ -654,6 +745,62 @@ reading_url() {
     printf -v "$varname" '%s' "$value"
 }
 
+# Валидация и проверка доступности URL подписки
+validate_subscription_url() {
+    local url="$1"
+    
+    # Проверка формата URL
+    if [[ ! "$url" =~ ^https?:// ]] && [[ ! "$url" =~ ^file:// ]] && [[ ! "$url" =~ ^folder:// ]]; then
+        echo -e "  ${COLOR_RED}✗${COLOR_RESET} ${LANG[INVALID_URL_FORMAT]}"
+        return 1
+    fi
+    
+    # Для file:// проверяем существование файла
+    if [[ "$url" =~ ^file:// ]]; then
+        local filepath="${url#file://}"
+        if [ ! -f "$filepath" ]; then
+            echo -e "  ${COLOR_RED}✗${COLOR_RESET} ${LANG[FILE_NOT_FOUND]}: ${filepath}"
+            return 1
+        fi
+        echo -e "  ${COLOR_GREEN}✓${COLOR_RESET} ${LANG[FILE_OK]}"
+        return 0
+    fi
+    
+    # Для folder:// проверяем существование папки
+    if [[ "$url" =~ ^folder:// ]]; then
+        local folderpath="${url#folder://}"
+        if [ ! -d "$folderpath" ]; then
+            echo -e "  ${COLOR_RED}✗${COLOR_RESET} ${LANG[FOLDER_NOT_FOUND]}: ${folderpath}"
+            return 1
+        fi
+        echo -e "  ${COLOR_GREEN}✓${COLOR_RESET} ${LANG[FOLDER_OK]}"
+        return 0
+    fi
+    
+    # Для HTTP/HTTPS проверяем доступность
+    echo -ne "${COLOR_GRAY}${LANG[CHECKING_URL]}...${COLOR_RESET}"
+    
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 15 -L "$url" 2>/dev/null)
+    
+    # Проверка что http_code это число
+    if ! [[ "$http_code" =~ ^[0-9]+$ ]]; then
+        echo -e "\r${COLOR_RED}✗${COLOR_RESET} ${LANG[URL_UNREACHABLE]}               "
+        return 1
+    fi
+    
+    if [ "$http_code" = "000" ]; then
+        echo -e "\r${COLOR_RED}✗${COLOR_RESET} ${LANG[URL_UNREACHABLE]}               "
+        return 1
+    elif [ "$http_code" -ge 400 ]; then
+        echo -e "\r${COLOR_RED}✗${COLOR_RESET} ${LANG[URL_ERROR]} (HTTP $http_code)   "
+        return 1
+    fi
+    
+    echo -e "\r${COLOR_GREEN}✓${COLOR_RESET} ${LANG[URL_OK]}                          "
+    return 0
+}
+
 # Чтение числа
 reading_number() {
     local prompt="$1"
@@ -663,12 +810,10 @@ reading_number() {
 
     while true; do
         if [ -n "$default" ]; then
-            read -e -r -p "$prompt [$default]: " value
+            reading "${prompt} [${default}]" value
         else
-            read -e -r -p "$prompt: " value
+            reading "$prompt" value
         fi
-
-        value=$(sanitize_input "$value")
 
         if [ -z "$value" ] && [ -n "$default" ]; then
             value="$default"
@@ -696,8 +841,7 @@ reading_yn() {
     [[ "$default" == "y" ]] && hint="Y/n"
 
     while true; do
-        read -e -r -p "$prompt ($hint): " value
-        value=$(sanitize_input "$value")
+        reading "${prompt} (${hint})" value
         value=$(echo "$value" | tr '[:upper:]' '[:lower:]')
 
         [ -z "$value" ] && value="$default"
@@ -710,6 +854,212 @@ reading_yn() {
     done
 
     printf -v "$varname" '%s' "$value"
+}
+
+# Проверка принадлежит ли IP к Cloudflare
+is_cloudflare_ip() {
+    local ip="$1"
+    
+    # Cloudflare IPv4 диапазоны (основные)
+    local cf_ranges=(
+        "173.245.48.0/20"
+        "103.21.244.0/22"
+        "103.22.200.0/22"
+        "103.31.4.0/22"
+        "141.101.64.0/18"
+        "108.162.192.0/18"
+        "190.93.240.0/20"
+        "188.114.96.0/20"
+        "197.234.240.0/22"
+        "198.41.128.0/17"
+        "162.158.0.0/15"
+        "104.16.0.0/13"
+        "104.24.0.0/14"
+        "172.64.0.0/13"
+        "131.0.72.0/22"
+    )
+    
+    # Простая проверка по первым октетам (быстрая)
+    local first_octet="${ip%%.*}"
+    case "$first_octet" in
+        104|108|141|162|172|173|188|190|197|198|103|131)
+            return 0
+            ;;
+    esac
+    
+    return 1
+}
+
+# Чтение домена с проверкой DNS
+reading_domain() {
+    local prompt="$1"
+    local varname="$2"
+    local value=""
+    local server_ip
+    local domain_ip
+    local is_cloudflare=""
+
+    server_ip=$(get_server_ip)
+
+    while true; do
+        reading "$prompt" value
+        
+        if [ -z "$value" ]; then
+            echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+            continue
+        fi
+        
+        # Проверка на выход
+        if [ "$value" = "0" ]; then
+            printf -v "$varname" '%s' ""
+            return 1
+        fi
+
+        # Убираем протокол если введён
+        value=$(echo "$value" | sed 's|^https\?://||' | sed 's|/.*||')
+        
+        # Проверка дубликата домена в nginx.conf
+        if domain_exists_in_nginx "$value"; then
+            echo -e "${COLOR_YELLOW}!${COLOR_RESET} ${LANG[DOMAIN_ALREADY_EXISTS]}: $value"
+            continue
+        fi
+
+        echo -ne "${COLOR_GRAY}${LANG[DOMAIN_CHECKING]}${COLOR_RESET}"
+
+        # Получаем IP домена через несколько методов
+        domain_ip=""
+        is_cloudflare=""
+        
+        # Метод 1: dig (наиболее надёжный)
+        if [ -z "$domain_ip" ] && command -v dig &>/dev/null; then
+            domain_ip=$(dig +short "$value" A 2>/dev/null | grep -oE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$' | head -1)
+        fi
+        
+        # Метод 2: host
+        if [ -z "$domain_ip" ] && command -v host &>/dev/null; then
+            domain_ip=$(host "$value" 2>/dev/null | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -1)
+        fi
+        
+        # Метод 3: nslookup
+        if [ -z "$domain_ip" ] && command -v nslookup &>/dev/null; then
+            domain_ip=$(nslookup "$value" 2>/dev/null | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | tail -1)
+        fi
+        
+        # Метод 4: getent (системный резолвер)
+        if [ -z "$domain_ip" ] && command -v getent &>/dev/null; then
+            domain_ip=$(getent hosts "$value" 2>/dev/null | awk '{print $1}' | grep -oE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$' | head -1)
+        fi
+        
+        # Метод 5: ping (последний вариант)
+        if [ -z "$domain_ip" ]; then
+            domain_ip=$(ping -c 1 -W 2 "$value" 2>/dev/null | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -1)
+        fi
+
+        # Результат проверки DNS
+        if [ -z "$domain_ip" ]; then
+            echo -e "\r${COLOR_RED}✗${COLOR_RESET} DNS: ${LANG[DOMAIN_NOT_RESOLVED]}                    "
+            continue
+        elif [ "$domain_ip" = "$server_ip" ]; then
+            # DNS совпадает — просто продолжаем без меню
+            echo -e "\r${COLOR_GREEN}✓${COLOR_RESET} DNS: ${domain_ip} → ${LANG[DOMAIN_OK]}              "
+            break
+        elif is_cloudflare_ip "$domain_ip"; then
+            is_cloudflare="true"
+            echo -e "\r${COLOR_YELLOW}☁${COLOR_RESET} DNS: ${domain_ip} (Cloudflare)                     "
+            echo -e "  ${COLOR_GRAY}${LANG[DOMAIN_CLOUDFLARE_HINT]}${COLOR_RESET}"
+        else
+            echo -e "\r${COLOR_YELLOW}!${COLOR_RESET} DNS: ${domain_ip} ≠ ${server_ip} (${LANG[DOMAIN_MISMATCH]})    "
+        fi
+
+        # Меню только если DNS не совпадает
+        echo -e "  1. ${LANG[DOMAIN_CONFIRM]}  2. ${LANG[DOMAIN_CHANGE]}  ${COLOR_GRAY}0. ${LANG[BACK]}${COLOR_RESET}"
+
+        local choice
+        reading "${LANG[SELECT_OPTION]}" choice
+
+        case "$choice" in
+            1) break ;;
+            0)
+                printf -v "$varname" '%s' ""
+                return 1
+                ;;
+            *) ;; # Повторить ввод
+        esac
+    done
+
+    printf -v "$varname" '%s' "$value"
+    return 0
+}
+
+# Валидация email
+validate_email() {
+    local email="$1"
+    # Простая проверка формата email
+    [[ "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]
+}
+
+# Чтение email с валидацией
+reading_email() {
+    local prompt="$1"
+    local varname="$2"
+    local value=""
+
+    while true; do
+        reading "$prompt" value
+
+        if [ -z "$value" ]; then
+            echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+            continue
+        fi
+
+        if ! validate_email "$value"; then
+            echo -e "${COLOR_RED}${LANG[SSL_INVALID_EMAIL]}${COLOR_RESET}"
+            continue
+        fi
+
+        break
+    done
+
+    printf -v "$varname" '%s' "$value"
+}
+
+# Проверка Cloudflare API токена
+validate_cloudflare_token() {
+    local token="$1"
+    
+    info "${LANG[SSL_VALIDATING_CF]}"
+    
+    # Пробуем как API Token (Bearer)
+    local response
+    response=$(curl -s -w "\n%{http_code}" \
+        --request GET \
+        --url "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+        --header "Authorization: Bearer ${token}" \
+        --header "Content-Type: application/json" 2>/dev/null)
+    
+    local http_code
+    http_code=$(echo "$response" | tail -n1)
+    local body
+    body=$(echo "$response" | sed '$d')
+    
+    if echo "$body" | grep -q '"success":true'; then
+        success "${LANG[SSL_CF_VALID]}"
+        return 0
+    fi
+    
+    # Пробуем как Global API Key (проверяем zones)
+    response=$(curl -s --request GET \
+        --url "https://api.cloudflare.com/client/v4/zones" \
+        --header "Authorization: Bearer ${token}" \
+        --header "Content-Type: application/json" 2>/dev/null)
+    
+    if echo "$response" | grep -q '"success":true'; then
+        success "${LANG[SSL_CF_VALID]}"
+        return 0
+    fi
+    
+    echo -e "${COLOR_RED}${LANG[SSL_CF_INVALID]}${COLOR_RESET}"
+    return 1
 }
 
 # Spinner для длительных операций
@@ -816,6 +1166,120 @@ get_server_ip() {
     echo "YOUR_SERVER_IP"
 }
 
+# Получение версии установленного xray-checker
+get_checker_version() {
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
+    
+    case "$method" in
+        docker)
+            # Проверяем существует ли контейнер (запущен или остановлен)
+            if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "xray-checker"; then
+                local version=""
+                
+                # Метод 1: Через API (если сервис работает)
+                version=$(curl -sf --connect-timeout 2 "http://127.0.0.1:${DEFAULT_PORT:-2112}/api/v1/system/info" 2>/dev/null | grep -oP '"version"\s*:\s*"\K[^"]+' || echo "")
+                if [ -n "$version" ]; then
+                    echo "$version"
+                    return 0
+                fi
+                
+                # Метод 2: Из логов контейнера (даже если рестартится)
+                version=$(docker logs xray-checker 2>&1 | grep -oP 'Xray Checker v\K[0-9]+\.[0-9]+\.[0-9]+' | tail -1 || echo "")
+                if [ -n "$version" ]; then
+                    echo "$version"
+                    return 0
+                fi
+                
+                # Метод 3: Из docker image labels
+                version=$(docker inspect xray-checker 2>/dev/null | grep -oP '"XRAY_CHECKER_VERSION=\K[^"]+' || echo "")
+                if [ -n "$version" ]; then
+                    echo "$version"
+                    return 0
+                fi
+                
+                echo "unknown"
+            else
+                echo ""
+            fi
+            ;;
+        binary)
+            if command -v xray-checker &>/dev/null; then
+                xray-checker --version 2>/dev/null | grep -oP 'v?\K[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown"
+            else
+                echo ""
+            fi
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+# Проверка установлен ли xray-checker
+is_checker_installed() {
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
+    
+    case "$method" in
+        docker)
+            [ -f "$FILE_COMPOSE" ] && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "xray-checker"
+            ;;
+        binary)
+            systemctl is-enabled xray-checker &>/dev/null
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Проверка запущен ли xray-checker
+is_checker_running() {
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
+    
+    case "$method" in
+        docker)
+            docker ps --format '{{.Names}}' 2>/dev/null | grep -q "xray-checker"
+            ;;
+        binary)
+            systemctl is-active --quiet xray-checker
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Проверка существует ли домен в nginx.conf
+domain_exists_in_nginx() {
+    local domain="$1"
+    local nginx_file="${DIR_XRAY_CHECKER}nginx.conf"
+    
+    if [ ! -f "$nginx_file" ]; then
+        return 1
+    fi
+    
+    grep -q "server_name.*${domain}" "$nginx_file" 2>/dev/null
+}
+
+# Проверка есть ли уже настроенный reverse proxy для xray-checker
+xray_checker_proxy_exists() {
+    local nginx_file="${DIR_XRAY_CHECKER}nginx.conf"
+    
+    if [ ! -f "$nginx_file" ]; then
+        return 1
+    fi
+    
+    # Проверяем наличие upstream или proxy_pass для xray-checker
+    if grep -qE "upstream\s+xray-checker|proxy_pass.*xray-checker" "$nginx_file" 2>/dev/null; then
+        return 0
+    fi
+    
+    return 1
+}
+
 # Генерация случайного пароля
 generate_password() {
     local length="${1:-24}"
@@ -879,19 +1343,59 @@ select_language() {
         *) set_language "en" ;;
     esac
 
-    # Сохранить выбор
-    mkdir -p "$DIR_XRAY_CHECKER"
-    echo "$SELECTED_LANG" > "$FILE_LANG"
+    # Сохранить выбор в конфиг
+    save_installer_config "LANGUAGE" "$SELECTED_LANG"
 }
 
 load_language() {
-    if [ -f "$FILE_LANG" ]; then
-        local saved_lang
-        saved_lang=$(cat "$FILE_LANG")
+    local saved_lang
+    saved_lang=$(get_installer_config "LANGUAGE")
+    if [ -n "$saved_lang" ]; then
         set_language "$saved_lang"
     else
         set_language "en"
     fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INSTALLER CONFIG (единый файл /etc/xray-checker/installer.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Сохранить значение в конфиг установщика
+save_installer_config() {
+    local key="$1"
+    local value="$2"
+    
+    mkdir -p "$DIR_INSTALLER_CONFIG"
+    
+    # Создать файл если не существует
+    [ ! -f "$FILE_INSTALLER_CONF" ] && touch "$FILE_INSTALLER_CONF"
+    
+    # Удалить старое значение и добавить новое
+    if grep -q "^${key}=" "$FILE_INSTALLER_CONF" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$FILE_INSTALLER_CONF"
+    else
+        echo "${key}=${value}" >> "$FILE_INSTALLER_CONF"
+    fi
+    
+    chmod 600 "$FILE_INSTALLER_CONF"
+}
+
+# Получить значение из конфига установщика
+get_installer_config() {
+    local key="$1"
+    local default="${2:-}"
+    
+    if [ -f "$FILE_INSTALLER_CONF" ]; then
+        local value
+        value=$(grep "^${key}=" "$FILE_INSTALLER_CONF" 2>/dev/null | cut -d'=' -f2-)
+        if [ -n "$value" ]; then
+            echo "$value"
+            return 0
+        fi
+    fi
+    
+    echo "$default"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -970,7 +1474,7 @@ install_docker() {
 # Константы для API
 XRAY_CHECKER_USERNAME="XrayChecker"
 
-# Извлечение cookie из nginx.conf (для eGames установки)
+# Извлечение cookie из nginx.conf (для eGames установки - локальный сервер)
 extract_egames_cookie() {
     local nginx_conf="/opt/remnawave/nginx.conf"
     
@@ -997,6 +1501,158 @@ extract_egames_cookie() {
     return 1
 }
 
+# Парсинг URL авторизации для извлечения cookie
+# URL формат: https://domain/auth/login?COOKIE_NAME=COOKIE_VALUE
+parse_auth_url() {
+    local auth_url="$1"
+    
+    # Проверяем что URL содержит query параметры
+    if [[ ! "$auth_url" =~ \? ]]; then
+        return 1
+    fi
+    
+    # Извлекаем query string (всё после ?)
+    local query_string="${auth_url#*\?}"
+    
+    # Разбираем первый параметр (name=value)
+    # Берём часть до & если есть несколько параметров
+    local first_param="${query_string%%&*}"
+    
+    # Проверяем формат name=value
+    if [[ ! "$first_param" =~ = ]]; then
+        return 1
+    fi
+    
+    # Извлекаем имя и значение
+    EGAMES_COOKIE_NAME="${first_param%%=*}"
+    EGAMES_COOKIE_VALUE="${first_param#*=}"
+    
+    # Проверяем что оба значения не пустые
+    if [ -n "$EGAMES_COOKIE_NAME" ] && [ -n "$EGAMES_COOKIE_VALUE" ]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Парсинг nginx конфигурации для извлечения cookie
+# Формат: map $http_cookie $auth_cookie { default 0; "~*COOKIE_NAME=COOKIE_VALUE" 1; }
+parse_nginx_cookie_block() {
+    local nginx_block="$1"
+    
+    # Ищем паттерн "~*NAME=VALUE" в блоке
+    # Примеры:
+    #   "~*aEmFnBcC=WbYWpixX" 1;
+    #   '~*aEmFnBcC=WbYWpixX' 1;
+    local cookie_match
+    cookie_match=$(echo "$nginx_block" | grep -oE '~\*[a-zA-Z0-9]+=[a-zA-Z0-9]+' | head -n1)
+    
+    if [ -z "$cookie_match" ]; then
+        return 1
+    fi
+    
+    # Убираем ~* в начале
+    local cookie_pair="${cookie_match#~\*}"
+    
+    # Извлекаем имя и значение
+    EGAMES_COOKIE_NAME="${cookie_pair%%=*}"
+    EGAMES_COOKIE_VALUE="${cookie_pair#*=}"
+    
+    # Проверяем что оба значения не пустые
+    if [ -n "$EGAMES_COOKIE_NAME" ] && [ -n "$EGAMES_COOKIE_VALUE" ]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Интерактивный ввод cookie данных
+get_cookie_interactively() {
+    echo ""
+    echo -e "${COLOR_CYAN}${LANG[API_COOKIE_INPUT_MODE]}${COLOR_RESET}"
+    echo -e "  ${COLOR_WHITE}1.${COLOR_RESET} ${LANG[API_COOKIE_MODE_URL]}"
+    echo -e "  ${COLOR_WHITE}2.${COLOR_RESET} ${LANG[API_COOKIE_MODE_NGINX]}"
+    echo ""
+    echo -e "  ${COLOR_WHITE}0.${COLOR_RESET} ${LANG[BACK]}"
+    echo ""
+    
+    local mode_choice
+    reading "${LANG[SELECT_OPTION]}" mode_choice
+    
+    case "$mode_choice" in
+        0)
+            return 2  # Код возврата для "назад"
+            ;;
+        1)
+            # Ввод URL авторизации
+            echo ""
+            echo -e "${COLOR_YELLOW}${LANG[API_AUTH_URL_HINT]}${COLOR_RESET}"
+            echo -e "${COLOR_GRAY}${LANG[API_AUTH_URL_EXAMPLE]}${COLOR_RESET}"
+            echo -e "${COLOR_GRAY}(0 = ${LANG[BACK]})${COLOR_RESET}"
+            echo ""
+            
+            while true; do
+                local auth_url=""
+                reading "${LANG[API_ENTER_AUTH_URL]}" auth_url
+                
+                # Проверка на "назад"
+                if [ "$auth_url" = "0" ]; then
+                    return 2
+                fi
+                
+                if [ -z "$auth_url" ]; then
+                    echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+                    continue
+                fi
+                
+                # Парсим URL
+                if parse_auth_url "$auth_url"; then
+                    success "${LANG[API_AUTH_URL_PARSED]}: ${EGAMES_COOKIE_NAME}=***"
+                    return 0
+                else
+                    echo -e "${COLOR_RED}${LANG[API_AUTH_URL_INVALID]}${COLOR_RESET}"
+                fi
+            done
+            ;;
+        2)
+            # Ввод nginx блока
+            echo ""
+            echo -e "${COLOR_YELLOW}${LANG[API_NGINX_BLOCK_HINT]}${COLOR_RESET}"
+            echo -e "${COLOR_GRAY}${LANG[API_NGINX_BLOCK_EXAMPLE]}${COLOR_RESET}"
+            echo -e "${COLOR_GRAY}(0 = ${LANG[BACK]})${COLOR_RESET}"
+            echo ""
+            
+            local nginx_block=""
+            local line
+            
+            # Читаем многострочный ввод до пустой строки
+            while IFS= read -r line; do
+                # Пустая строка - конец ввода
+                [ -z "$line" ] && break
+                # Проверка на "назад"
+                [ "$line" = "0" ] && return 2
+                nginx_block="${nginx_block}${line}"$'\n'
+            done
+            
+            if [ -z "$nginx_block" ]; then
+                return 2
+            fi
+            
+            # Парсим блок
+            if parse_nginx_cookie_block "$nginx_block"; then
+                success "${LANG[API_NGINX_BLOCK_PARSED]}: ${EGAMES_COOKIE_NAME}=***"
+                return 0
+            else
+                echo -e "${COLOR_RED}${LANG[API_NGINX_BLOCK_INVALID]}${COLOR_RESET}"
+                return 1
+            fi
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 # Проверка существования пользователя XrayChecker
 check_xraychecker_user() {
     local panel_url="$1"
@@ -1021,8 +1677,9 @@ check_xraychecker_user() {
     local body=$(echo "$response" | sed '$d')
     
     if [ "$http_code" = "200" ]; then
-        # Пользователь существует — извлекаем subscriptionUrl
+        # Пользователь существует — извлекаем данные
         API_SUBSCRIPTION_URL=$(echo "$body" | jq -r '.response.subscriptionUrl // empty' 2>/dev/null)
+        EXISTING_USER_UUID=$(echo "$body" | jq -r '.response.uuid // empty' 2>/dev/null)
         if [ -n "$API_SUBSCRIPTION_URL" ]; then
             return 0
         fi
@@ -1031,20 +1688,209 @@ check_xraychecker_user() {
     return 1
 }
 
+# Удаление пользователя XrayChecker
+delete_xraychecker_user() {
+    local panel_url="$1"
+    local api_token="$2"
+    local cookie_header="${3:-}"
+    local user_uuid="$4"
+    
+    if [ -z "$user_uuid" ]; then
+        return 1
+    fi
+    
+    local response
+    local http_code
+    
+    if [ -n "$cookie_header" ]; then
+        response=$(curl -s -w "\n%{http_code}" \
+            -X DELETE \
+            -H "Authorization: Bearer ${api_token}" \
+            -H "Cookie: ${cookie_header}" \
+            "${panel_url}/api/users/${user_uuid}" 2>/dev/null)
+    else
+        response=$(curl -s -w "\n%{http_code}" \
+            -X DELETE \
+            -H "Authorization: Bearer ${api_token}" \
+            "${panel_url}/api/users/${user_uuid}" 2>/dev/null)
+    fi
+    
+    http_code=$(echo "$response" | tail -n1)
+    
+    if [ "$http_code" = "200" ] || [ "$http_code" = "204" ]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Получение списка Internal Squads
+get_internal_squads() {
+    local panel_url="$1"
+    local api_token="$2"
+    local cookie_header="${3:-}"
+    
+    local response
+    local http_code
+    
+    if [ -n "$cookie_header" ]; then
+        response=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${api_token}" \
+            -H "Cookie: ${cookie_header}" \
+            "${panel_url}/api/internal-squads" 2>/dev/null)
+    else
+        response=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${api_token}" \
+            "${panel_url}/api/internal-squads" 2>/dev/null)
+    fi
+    
+    http_code=$(echo "$response" | tail -n1)
+    local body=$(echo "$response" | sed '$d')
+    
+    if [ "$http_code" = "200" ]; then
+        # Сохраняем полный JSON ответ для последующего использования
+        INTERNAL_SQUADS_JSON=$(echo "$body" | jq -r '.response.internalSquads // []' 2>/dev/null)
+        INTERNAL_SQUADS_COUNT=$(echo "$body" | jq -r '.response.total // 0' 2>/dev/null)
+        
+        if [ "$INTERNAL_SQUADS_COUNT" -gt 0 ] 2>/dev/null; then
+            return 0
+        fi
+    fi
+    
+    INTERNAL_SQUADS_JSON="[]"
+    INTERNAL_SQUADS_COUNT=0
+    return 1
+}
+
+# Интерактивный выбор сквадов
+select_squads_interactive() {
+    local squads_json="$1"
+    local squads_count="$2"
+    
+    # Показываем меню выбора
+    echo ""
+    echo -e "${COLOR_CYAN}${LANG[API_SQUADS_SELECT_MODE]}${COLOR_RESET}"
+    echo -e "  ${COLOR_WHITE}1.${COLOR_RESET} ${LANG[API_SQUADS_ALL]} (${squads_count})"
+    echo -e "  ${COLOR_WHITE}2.${COLOR_RESET} ${LANG[API_SQUADS_SELECT]}"
+    echo -e "  ${COLOR_WHITE}3.${COLOR_RESET} ${LANG[API_SQUADS_NONE]}"
+    echo ""
+    
+    local choice
+    reading "${LANG[SELECT_OPTION]}" choice
+    
+    case "$choice" in
+        1)
+            # Все сквады
+            SELECTED_SQUADS_UUIDS=$(echo "$squads_json" | jq -r '.[].uuid' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+            info "${LANG[API_SQUADS_SELECTED]}: ${squads_count}"
+            echo -e "${COLOR_GRAY}${LANG[API_SQUADS_HINT]}${COLOR_RESET}"
+            return 0
+            ;;
+        2)
+            # Выбор конкретных сквадов
+            echo ""
+            echo -e "${COLOR_WHITE}${LANG[API_SQUADS_LIST]}${COLOR_RESET}"
+            
+            # DEBUG: показать структуру JSON (раскомментировать для отладки)
+            # echo "DEBUG JSON: $squads_json" | head -c 500
+            
+            # Выводим список сквадов с номерами (используем jq с индексами)
+            # API возвращает: uuid, name, info.membersCount, info.inboundsCount
+            local squad_list
+            squad_list=$(echo "$squads_json" | jq -r 'to_entries | .[] | "  \u001b[1;33m\(.key + 1).\u001b[0m \(.value.name // "unnamed") (\(.value.info.membersCount // 0) members, \(.value.info.inboundsCount // 0) inbounds)"' 2>/dev/null)
+            
+            # Если jq вернул пустую строку, попробуем альтернативный формат
+            if [ -z "$squad_list" ]; then
+                squad_list=$(echo "$squads_json" | jq -r 'to_entries | .[] | "  \u001b[1;33m\(.key + 1).\u001b[0m \(.value.tag // .value.name // "Squad \(.key + 1)")"' 2>/dev/null)
+            fi
+            
+            echo -e "$squad_list"
+            
+            echo ""
+            reading "${LANG[API_SQUADS_ENTER_NUMBERS]}" selected_numbers
+            
+            if [ -z "$selected_numbers" ]; then
+                SELECTED_SQUADS_UUIDS=""
+                return 0
+            fi
+            
+            # Преобразуем номера в UUID
+            local selected_uuids=""
+            for num in $selected_numbers; do
+                # Проверяем что это число
+                if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$squads_count" ]; then
+                    local uuid
+                    uuid=$(echo "$squads_json" | jq -r ".[$((num-1))].uuid // empty" 2>/dev/null)
+                    if [ -n "$uuid" ]; then
+                        [ -n "$selected_uuids" ] && selected_uuids="${selected_uuids},"
+                        selected_uuids="${selected_uuids}${uuid}"
+                    fi
+                fi
+            done
+            
+            SELECTED_SQUADS_UUIDS="$selected_uuids"
+            
+            # Подсчитываем выбранные
+            local selected_count=0
+            if [ -n "$SELECTED_SQUADS_UUIDS" ]; then
+                selected_count=$(echo "$SELECTED_SQUADS_UUIDS" | tr ',' '\n' | wc -l)
+            fi
+            
+            info "${LANG[API_SQUADS_SELECTED]}: ${selected_count}"
+            echo -e "${COLOR_GRAY}${LANG[API_SQUADS_HINT]}${COLOR_RESET}"
+            return 0
+            ;;
+        3|*)
+            # Без сквадов
+            SELECTED_SQUADS_UUIDS=""
+            return 0
+            ;;
+    esac
+}
+
 # Создание пользователя XrayChecker
 create_xraychecker_user() {
     local panel_url="$1"
     local api_token="$2"
     local cookie_header="${3:-}"
     
-    local payload='{
-        "username": "'"${XRAY_CHECKER_USERNAME}"'",
-        "expireAt": "2099-12-31T23:59:59.000Z",
-        "trafficLimitBytes": 0,
-        "trafficLimitStrategy": "NO_RESET",
-        "status": "ACTIVE",
-        "description": "Auto-created by xray-checker installer for monitoring"
-    }'
+    # Сначала получаем список Internal Squads
+    info "${LANG[API_GETTING_SQUADS]}"
+    get_internal_squads "$panel_url" "$api_token" "$cookie_header"
+    
+    # Формируем массив activeInternalSquads для JSON
+    local squads_array="[]"
+    SELECTED_SQUADS_UUIDS=""
+    
+    if [ "$INTERNAL_SQUADS_COUNT" -gt 0 ] 2>/dev/null; then
+        info "${LANG[API_SQUADS_FOUND]}: ${INTERNAL_SQUADS_COUNT}"
+        
+        # Интерактивный выбор сквадов
+        select_squads_interactive "$INTERNAL_SQUADS_JSON" "$INTERNAL_SQUADS_COUNT"
+        
+        if [ -n "$SELECTED_SQUADS_UUIDS" ]; then
+            # Преобразуем список UUID в JSON массив
+            squads_array=$(echo "$SELECTED_SQUADS_UUIDS" | tr ',' '\n' | jq -R . | jq -s .)
+        fi
+    else
+        warning "${LANG[API_NO_SQUADS]}"
+    fi
+    
+    # Создаём payload с activeInternalSquads
+    local payload
+    payload=$(jq -n \
+        --arg username "$XRAY_CHECKER_USERNAME" \
+        --arg description "Auto-created by xray-checker installer for monitoring" \
+        --argjson squads "$squads_array" \
+        '{
+            "username": $username,
+            "expireAt": "2099-12-31T23:59:59.000Z",
+            "trafficLimitBytes": 0,
+            "trafficLimitStrategy": "NO_RESET",
+            "status": "ACTIVE",
+            "description": $description,
+            "activeInternalSquads": $squads
+        }')
     
     local response
     local http_code
@@ -1094,17 +1940,25 @@ get_subscription_via_api() {
         if [ -n "$EGAMES_COOKIE_NAME" ] && [ -n "$EGAMES_COOKIE_VALUE" ]; then
             cookie_header="${EGAMES_COOKIE_NAME}=${EGAMES_COOKIE_VALUE}"
         else
-            # Запросить вручную
-            echo ""
-            echo -e "${COLOR_YELLOW}${LANG[API_COOKIE_INFO]}${COLOR_RESET}"
-            echo -e "${COLOR_GRAY}${LANG[API_COOKIE_HINT]}${COLOR_RESET}"
-            echo ""
-            reading "${LANG[API_ENTER_COOKIE_NAME]}" MANUAL_COOKIE_NAME
-            reading "${LANG[API_ENTER_COOKIE_VALUE]}" MANUAL_COOKIE_VALUE
+            # Интерактивный ввод cookie
+            local cookie_result
+            get_cookie_interactively
+            cookie_result=$?
             
-            if [ -n "$MANUAL_COOKIE_NAME" ] && [ -n "$MANUAL_COOKIE_VALUE" ]; then
-                cookie_header="${MANUAL_COOKIE_NAME}=${MANUAL_COOKIE_VALUE}"
-            fi
+            case $cookie_result in
+                0)
+                    # Успешно получили cookie
+                    cookie_header="${EGAMES_COOKIE_NAME}=${EGAMES_COOKIE_VALUE}"
+                    ;;
+                2)
+                    # Пользователь выбрал "назад"
+                    return 2
+                    ;;
+                *)
+                    # Ошибка
+                    return 1
+                    ;;
+            esac
         fi
     fi
     
@@ -1114,7 +1968,43 @@ get_subscription_via_api() {
     # Шаг 1: Проверить существует ли пользователь
     if check_xraychecker_user "$panel_url" "$api_token" "$cookie_header"; then
         success "${LANG[API_USER_FOUND]}"
-        return 0
+        echo -e "${COLOR_GRAY}${LANG[API_USER_FOUND_HINT]}${COLOR_RESET}"
+        echo ""
+        
+        # Спросить что делать с существующим пользователем
+        echo -e "${COLOR_CYAN}${LANG[API_USER_FOUND_CHOICE]}${COLOR_RESET}"
+        echo -e "  ${COLOR_WHITE}1.${COLOR_RESET} ${LANG[API_USER_USE_EXISTING]}"
+        echo -e "  ${COLOR_WHITE}2.${COLOR_RESET} ${LANG[API_USER_RECREATE]}"
+        echo ""
+        echo -e "  ${COLOR_WHITE}0.${COLOR_RESET} ${LANG[BACK]}"
+        echo ""
+        
+        local user_choice
+        reading "${LANG[SELECT_OPTION]}" user_choice
+        
+        case "$user_choice" in
+            0)
+                return 2
+                ;;
+            1)
+                # Использовать существующего - URL уже в API_SUBSCRIPTION_URL
+                return 0
+                ;;
+            2)
+                # Удалить и создать заново
+                info "${LANG[API_USER_DELETING]}"
+                if delete_xraychecker_user "$panel_url" "$api_token" "$cookie_header" "$EXISTING_USER_UUID"; then
+                    success "${LANG[API_USER_DELETED]}"
+                else
+                    warning "Failed to delete user, trying to create anyway..."
+                fi
+                # Продолжаем к созданию нового пользователя
+                ;;
+            *)
+                # По умолчанию использовать существующего
+                return 0
+                ;;
+        esac
     fi
     
     # Шаг 2: Создать нового пользователя
@@ -1147,11 +2037,11 @@ choose_subscription_source() {
     
     case "$choice" in
         1)
-            # Ручной ввод URL (с авто-добавлением https://)
+            # Ручной ввод (с авто-добавлением https://)
             echo ""
             local sub_input=""
             while [ -z "$sub_input" ]; do
-                reading "${LANG[ENTER_SUBSCRIPTION_URL]}" sub_input
+                reading "${LANG[ENTER_SUBSCRIPTION]}" sub_input
                 if [ -z "$sub_input" ]; then
                     echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
                 fi
@@ -1247,78 +2137,85 @@ setup_remnawave_api() {
     echo ""
     
     # Определить тип установки панели
-    echo -e "${COLOR_CYAN}${LANG[API_INSTALL_TYPE]}${COLOR_RESET}"
-    print_menu_item "1" "${LANG[API_INSTALL_OFFICIAL]}"
-    print_menu_item "2" "${LANG[API_INSTALL_EGAMES]}"
-    print_menu_item "0" "${LANG[BACK]}"
-    echo ""
+    while true; do
+        echo -e "${COLOR_CYAN}${LANG[API_INSTALL_TYPE]}${COLOR_RESET}"
+        print_menu_item "1" "${LANG[API_INSTALL_OFFICIAL]}"
+        print_menu_item "2" "${LANG[API_INSTALL_EGAMES]}"
+        print_menu_item "0" "${LANG[BACK]}"
+        echo ""
 
-    local install_type
-    reading "${LANG[SELECT_OPTION]}:" install_type
-    
-    [ "$install_type" = "0" ] && return 1
+        local install_type
+        reading "${LANG[SELECT_OPTION]}:" install_type
+        
+        [ "$install_type" = "0" ] && return 1
 
-    local use_cookie="n"
-    
-    if [ "$install_type" = "2" ]; then
-        use_cookie="y"
+        local use_cookie="n"
         
-        # Попробовать автоматически извлечь cookie
-        info "${LANG[API_EXTRACTING_COOKIE]}"
-        if extract_egames_cookie; then
-            success "Cookie found: ${EGAMES_COOKIE_NAME}=***"
-        else
-            warning "${LANG[API_COOKIE_NOT_FOUND]}"
-        fi
-    fi
-    
-    # Получить подписку
-    if get_subscription_via_api "$PANEL_URL" "$API_TOKEN" "$use_cookie"; then
-        SUBSCRIPTION_URL="$API_SUBSCRIPTION_URL"
-        
-        # Сохранить конфигурацию API для будущего использования
-        save_api_config
-        
-        echo ""
-        success "${LANG[API_SUCCESS]}"
-        echo -e "  ${COLOR_WHITE}URL:${COLOR_RESET} ${COLOR_CYAN}${SUBSCRIPTION_URL}${COLOR_RESET}"
-        echo ""
-        
-        read -r -p "${LANG[PRESS_ENTER]}"
-        return 0
-    else
-        echo ""
-        warning "${LANG[API_FAILED]}"
-        echo ""
-        
-        # Предложить ввести вручную
-        local fallback
-        reading_yn "${LANG[API_FALLBACK_MANUAL]}" fallback "y"
-        
-        if [ "$fallback" = "y" ]; then
-            reading_url "${LANG[ENTER_SUBSCRIPTION_URL]}" SUBSCRIPTION_URL
-            return 0
+        if [ "$install_type" = "2" ]; then
+            use_cookie="y"
+            
+            # Попробовать автоматически извлечь cookie
+            info "${LANG[API_EXTRACTING_COOKIE]}"
+            if extract_egames_cookie; then
+                success "Cookie found: ${EGAMES_COOKIE_NAME}=***"
+            else
+                warning "${LANG[API_COOKIE_NOT_FOUND]}"
+            fi
         fi
         
-        return 1
-    fi
+        # Получить подписку
+        local api_result
+        get_subscription_via_api "$PANEL_URL" "$API_TOKEN" "$use_cookie"
+        api_result=$?
+        
+        case $api_result in
+            0)
+                # Успех
+                SUBSCRIPTION_URL="$API_SUBSCRIPTION_URL"
+                
+                # Сохранить конфигурацию API для будущего использования
+                save_api_config
+                
+                echo ""
+                success "${LANG[API_SUCCESS]}"
+                echo -e "  ${COLOR_WHITE}URL:${COLOR_RESET} ${COLOR_CYAN}${SUBSCRIPTION_URL}${COLOR_RESET}"
+                echo ""
+                
+                read -r -p "${LANG[PRESS_ENTER]}"
+                return 0
+                ;;
+            2)
+                # Пользователь выбрал "назад" - вернуться к выбору типа установки
+                echo ""
+                continue
+                ;;
+            *)
+                # Ошибка
+                echo ""
+                warning "${LANG[API_FAILED]}"
+                echo ""
+                
+                # Предложить ввести вручную
+                local fallback
+                reading_yn "${LANG[API_FALLBACK_MANUAL]}" fallback "y"
+                
+                if [ "$fallback" = "y" ]; then
+                    reading_url "${LANG[ENTER_SUBSCRIPTION]}" SUBSCRIPTION_URL
+                    return 0
+                fi
+                
+                return 1
+                ;;
+        esac
+    done
 }
 
 # Сохранение конфигурации API
 save_api_config() {
-    mkdir -p "$DIR_XRAY_CHECKER"
-    
-    cat > "$FILE_API_CONFIG" <<EOF
-# Remnawave API Configuration
-# Saved by xray-checker installer
-
-PANEL_URL="${PANEL_URL}"
-API_TOKEN="${API_TOKEN}"
-SUBSCRIPTION_MODE="api"
-XRAY_CHECKER_USERNAME="${XRAY_CHECKER_USERNAME}"
-EOF
-    
-    chmod 600 "$FILE_API_CONFIG"
+    save_installer_config "PANEL_URL" "$PANEL_URL"
+    save_installer_config "API_TOKEN" "$API_TOKEN"
+    save_installer_config "SUBSCRIPTION_MODE" "api"
+    save_installer_config "XRAY_CHECKER_USERNAME" "$XRAY_CHECKER_USERNAME"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1359,7 +2256,15 @@ detect_reverse_proxy() {
         return 0
     fi
 
-    # 4. Проверка системного Nginx (с защитой от ошибок)
+    # 4. Проверка НАШЕГО nginx (в папке xray-checker)
+    if [ -f "${DIR_XRAY_CHECKER}nginx.conf" ]; then
+        DETECTED_PROXY="own_nginx"
+        DETECTED_PROXY_PATH="${DIR_XRAY_CHECKER}nginx.conf"
+        [ -d "/etc/letsencrypt/live" ] && DETECTED_CERTS="letsencrypt"
+        return 0
+    fi
+
+    # 5. Проверка системного Nginx (с защитой от ошибок)
     if command -v systemctl &>/dev/null && systemctl is-active --quiet nginx 2>/dev/null; then
         DETECTED_PROXY="system_nginx"
         DETECTED_PROXY_PATH="/etc/nginx/sites-available/"
@@ -1367,9 +2272,29 @@ detect_reverse_proxy() {
         return 0
     fi
 
-    # 5. Проверка Docker nginx
+    # 6. Проверка Docker nginx (внешний, не наш)
     if command -v docker &>/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -qiE "nginx|remnawave-nginx"; then
         DETECTED_PROXY="docker_nginx"
+        # Определить путь к конфигурации Docker nginx
+        # Сначала проверяем известные пути
+        if [ -d "/opt/nginx/conf.d" ]; then
+            DETECTED_PROXY_PATH="/opt/nginx/conf.d"
+        elif [ -d "/opt/remnawave/nginx" ]; then
+            DETECTED_PROXY_PATH="/opt/remnawave/nginx"
+        else
+            # Попробуем найти путь из Docker volumes
+            local nginx_container
+            nginx_container=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "nginx|remnawave-nginx" | head -1)
+            if [ -n "$nginx_container" ]; then
+                # Ищем volume mount для conf.d или nginx.conf
+                local conf_mount
+                conf_mount=$(docker inspect "$nginx_container" 2>/dev/null | grep -oP '(?<="Source": ")[^"]*(?=.*conf)' | head -1)
+                if [ -n "$conf_mount" ] && [ -d "$conf_mount" ]; then
+                    DETECTED_PROXY_PATH="$conf_mount"
+                fi
+            fi
+        fi
+        [ -d "/etc/letsencrypt/live" ] && DETECTED_CERTS="letsencrypt"
         return 0
     fi
 
@@ -1395,6 +2320,7 @@ get_proxy_display_name() {
         egames_nginx)      echo "eGames Nginx (Remnawave)" ;;
         remnawave_caddy)   echo "Remnawave Caddy" ;;
         remnawave_nginx)   echo "Remnawave Nginx" ;;
+        own_nginx)         echo "Nginx (xray-checker)" ;;
         system_nginx)      echo "System Nginx" ;;
         docker_nginx)      echo "Docker Nginx" ;;
         system_caddy)      echo "System Caddy" ;;
@@ -1411,6 +2337,16 @@ get_proxy_display_name() {
 SSL_CERT_PATH=""
 SSL_KEY_PATH=""
 SSL_DOMAIN=""
+HAS_SSL=""  # "true" если SSL успешно настроен
+
+# Глобальные переменные для сбора настроек (фаза вопросов)
+SETUP_PROXY_TYPE=""      # "nginx", "caddy", "existing_nginx", "existing_caddy"
+SETUP_DOMAIN=""          # Домен для xray-checker
+SETUP_SSL_METHOD=""      # "cloudflare", "acme", "gcore", "existing", "skip" (skip для Caddy)
+SETUP_CF_TOKEN=""        # Cloudflare API токен
+SETUP_GCORE_TOKEN=""     # Gcore API токен
+SETUP_CERT_EMAIL=""      # Email для Let's Encrypt
+SETUP_EXISTING_CERT=""   # Путь к существующему сертификату
 
 # Установка certbot если нет
 install_certbot() {
@@ -1602,6 +2538,44 @@ use_existing_certs() {
     return 1
 }
 
+# Извлечь базовый домен из субдомена: sub.example.com → example.com
+extract_base_domain() {
+    local subdomain="$1"
+    echo "$subdomain" | awk -F'.' '{if (NF > 2) {print $(NF-1)"."$NF} else {print $0}}'
+}
+
+# Проверить является ли сертификат wildcard
+# Возвращает 0 если сертификат содержит wildcard (*.domain)
+is_wildcard_cert() {
+    local cert_dir="$1"
+    local cert_path="/etc/letsencrypt/live/$cert_dir/fullchain.pem"
+
+    if [ ! -f "$cert_path" ]; then
+        return 1
+    fi
+
+    # Проверяем наличие любого wildcard (*.) в Subject Alternative Names
+    if openssl x509 -noout -text -in "$cert_path" 2>/dev/null | grep -qE "DNS:\*\."; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Получить домены из сертификата (Subject Alternative Names)
+get_cert_domains() {
+    local cert_dir="$1"
+    local cert_path="/etc/letsencrypt/live/$cert_dir/fullchain.pem"
+    
+    if [ ! -f "$cert_path" ]; then
+        return 1
+    fi
+    
+    # Извлекаем все DNS имена из SAN
+    openssl x509 -noout -text -in "$cert_path" 2>/dev/null | \
+        grep -oP 'DNS:\K[^,\s]+' | tr '\n' ' '
+}
+
 # Список доступных сертификатов в /etc/letsencrypt/live/
 list_available_certs() {
     if [ ! -d "/etc/letsencrypt/live" ]; then
@@ -1612,7 +2586,19 @@ list_available_certs() {
     for dir in /etc/letsencrypt/live/*/; do
         local name=$(basename "$dir")
         if [ "$name" != "README" ] && [ -f "${dir}fullchain.pem" ]; then
-            certs+=("$name")
+            # Проверяем wildcard и получаем домены
+            local cert_domains
+            cert_domains=$(get_cert_domains "$name")
+            
+            # Ищем wildcard в доменах сертификата
+            local wildcard_domain
+            wildcard_domain=$(echo "$cert_domains" | grep -oE '\*\.[^ ]+' | head -1)
+            
+            if [ -n "$wildcard_domain" ]; then
+                certs+=("$wildcard_domain")
+            else
+                certs+=("$name")
+            fi
         fi
     done
     
@@ -1624,90 +2610,214 @@ list_available_certs() {
     return 0
 }
 
-# Меню выбора метода получения SSL сертификата
-choose_ssl_method() {
+# Найти подходящий wildcard сертификат для домена
+# Например: для checker.example.com ищем сертификат с *.example.com
+find_matching_wildcard() {
     local domain="$1"
     
-    clear_screen
-    print_header "${LANG[SSL_TITLE]}"
+    if [ ! -d "/etc/letsencrypt/live" ]; then
+        return 1
+    fi
     
-    echo -e "  ${COLOR_WHITE}${LANG[SSL_DOMAIN]}:${COLOR_RESET} ${COLOR_CYAN}${domain}${COLOR_RESET}"
+    # Извлекаем базовый домен (example.com из sub.example.com)
+    local base_domain
+    base_domain=$(extract_base_domain "$domain")
+    
+    if [ -z "$base_domain" ]; then
+        return 1
+    fi
+    
+    # Проверяем что это субдомен первого уровня (wildcard покрывает только один уровень)
+    local subdomain_part="${domain%.$base_domain}"
+    if [[ "$subdomain_part" =~ \. ]]; then
+        # Это субдомен второго+ уровня (deep.sub.example.com) — wildcard не подходит
+        return 1
+    fi
+    
+    # Ищем wildcard сертификат среди всех сертификатов
+    local wildcard_pattern="*.${base_domain}"
+    
+    for cert_dir in /etc/letsencrypt/live/*/; do
+        local name=$(basename "$cert_dir")
+        [ "$name" = "README" ] && continue
+        [ ! -f "${cert_dir}fullchain.pem" ] && continue
+        
+        # Получаем домены из сертификата
+        local cert_domains
+        cert_domains=$(get_cert_domains "$name")
+        
+        # Проверяем есть ли нужный wildcard
+        if echo "$cert_domains" | grep -qF "$wildcard_pattern"; then
+            WILDCARD_CERT_DOMAIN="$name"
+            WILDCARD_BASE_DOMAIN="$base_domain"
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
+# Сбор настроек SSL (только вопросы, без установки)
+collect_ssl_settings() {
+    local domain="$1"
+    
+    # Сброс предыдущих настроек
+    SETUP_SSL_METHOD=""
+    SETUP_CF_TOKEN=""
+    SETUP_GCORE_TOKEN=""
+    SETUP_CERT_EMAIL=""
+    SETUP_EXISTING_CERT=""
+    WILDCARD_CERT_DOMAIN=""
+    WILDCARD_BASE_DOMAIN=""
+    
     echo ""
+    echo -e "  ${COLOR_CYAN}SSL ${LANG[SSL_DOMAIN]}: ${domain}${COLOR_RESET}"
+    
+    # Проверяем есть ли подходящий wildcard сертификат
+    if find_matching_wildcard "$domain"; then
+        echo -e "  ${COLOR_GREEN}✓${COLOR_RESET} ${LANG[SSL_WILDCARD_FOUND]}: ${COLOR_YELLOW}*.${WILDCARD_BASE_DOMAIN}${COLOR_RESET}"
+        echo -e "  ${COLOR_GREEN}✓${COLOR_RESET} ${LANG[SSL_WILDCARD_AUTO]}"
+        echo ""
+        
+        SETUP_SSL_METHOD="existing"
+        SETUP_EXISTING_CERT="$WILDCARD_CERT_DOMAIN"
+        return 0
+    fi
     
     # Проверить существующие сертификаты
     local existing_certs
     existing_certs=$(list_available_certs 2>/dev/null)
     
     if [ -n "$existing_certs" ]; then
-        echo -e "  ${COLOR_GREEN}${LANG[SSL_EXISTING_FOUND]}:${COLOR_RESET}"
+        echo -e "  ${COLOR_GREEN}✓${COLOR_RESET} ${LANG[SSL_EXISTING_FOUND]}:"
         echo "$existing_certs" | while read -r cert; do
             echo -e "    ${COLOR_GRAY}• ${cert}${COLOR_RESET}"
         done
-        echo ""
     fi
+    echo ""
     
-    print_menu_item "1" "${LANG[SSL_CLOUDFLARE]}" "${LANG[SSL_CF_DESC]}"
-    print_menu_item "2" "${LANG[SSL_ACME]}" "${LANG[SSL_ACME_DESC]}"
-    print_menu_item "3" "${LANG[SSL_GCORE]}" "${LANG[SSL_GCORE_DESC]}"
-    
-    if [ -n "$existing_certs" ]; then
-        print_menu_item "4" "${LANG[SSL_USE_EXISTING]}"
-    fi
-    
-    print_menu_item "0" "${LANG[SSL_SKIP]}"
+    echo -e "  ${COLOR_WHITE}1.${COLOR_RESET} Cloudflare DNS ${COLOR_GRAY}(API token)${COLOR_RESET}"
+    echo -e "  ${COLOR_WHITE}2.${COLOR_RESET} ACME HTTP-01 ${COLOR_GRAY}(port 80)${COLOR_RESET}"
+    echo -e "  ${COLOR_WHITE}3.${COLOR_RESET} Gcore DNS ${COLOR_GRAY}(API token)${COLOR_RESET}"
+    [ -n "$existing_certs" ] && echo -e "  ${COLOR_WHITE}4.${COLOR_RESET} ${LANG[SSL_USE_EXISTING]}"
+    echo -e "  ${COLOR_GRAY}0. ${LANG[SSL_SKIP]}${COLOR_RESET}"
     echo ""
     
     local choice
-    reading "${LANG[SELECT_OPTION]}:" choice
-    
-    case "$choice" in
-        1)
-            # Cloudflare DNS-01
-            echo ""
-            reading_required "${LANG[SSL_ENTER_CF_TOKEN]}" CF_TOKEN
-            reading_required "${LANG[SSL_ENTER_EMAIL]}" CERT_EMAIL
-            
-            get_cert_cloudflare "$domain" "$CERT_EMAIL" "$CF_TOKEN"
-            return $?
-            ;;
-        2)
-            # ACME HTTP-01 (standalone)
-            echo ""
-            reading_required "${LANG[SSL_ENTER_EMAIL]}" CERT_EMAIL
-            
-            get_cert_acme_standalone "$domain" "$CERT_EMAIL"
-            return $?
-            ;;
-        3)
-            # Gcore DNS
-            echo ""
-            reading_required "${LANG[SSL_ENTER_GCORE_TOKEN]}" GCORE_TOKEN
-            reading_required "${LANG[SSL_ENTER_EMAIL]}" CERT_EMAIL
-            
-            get_cert_gcore "$domain" "$CERT_EMAIL" "$GCORE_TOKEN"
-            return $?
-            ;;
-        4)
-            # Использовать существующие
-            if [ -n "$existing_certs" ]; then
-                echo ""
-                echo -e "${COLOR_WHITE}${LANG[SSL_SELECT_CERT]}:${COLOR_RESET}"
-                echo "$existing_certs" | nl -w2 -s'. '
-                echo ""
+    while true; do
+        reading "${LANG[SELECT_OPTION]}" choice
+        
+        # Пустой ввод — показать ошибку и повторить
+        if [ -z "$choice" ]; then
+            echo -e "${COLOR_RED}${LANG[INVALID_CHOICE]}${COLOR_RESET}"
+            continue
+        fi
+        
+        case "$choice" in
+            0)
+                SETUP_SSL_METHOD="skip"
+                return 1
+                ;;
+            1)
+                SETUP_SSL_METHOD="cloudflare"
+                reading "${LANG[SSL_ENTER_CF_TOKEN]}" SETUP_CF_TOKEN
+                reading_email "${LANG[SSL_ENTER_EMAIL]}" SETUP_CERT_EMAIL
                 
-                reading "${LANG[SSL_ENTER_CERT_NUM]}" cert_num
-                local selected_cert
-                selected_cert=$(echo "$existing_certs" | sed -n "${cert_num}p")
-                
-                if [ -n "$selected_cert" ]; then
-                    use_existing_certs "$selected_cert"
-                    return $?
+                # Валидация токена после сбора всех данных
+                if [ -n "$SETUP_CF_TOKEN" ]; then
+                    if ! validate_cloudflare_token "$SETUP_CF_TOKEN"; then
+                        SETUP_SSL_METHOD="skip"
+                        return 1
+                    fi
+                else
+                    echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+                    SETUP_SSL_METHOD="skip"
+                    return 1
                 fi
-            fi
-            return 1
+                return 0
+                ;;
+            2)
+                SETUP_SSL_METHOD="acme"
+                reading_email "${LANG[SSL_ENTER_EMAIL]}" SETUP_CERT_EMAIL
+                return 0
+                ;;
+            3)
+                SETUP_SSL_METHOD="gcore"
+                reading "${LANG[SSL_ENTER_GCORE_TOKEN]}" SETUP_GCORE_TOKEN
+                
+                if [ -z "$SETUP_GCORE_TOKEN" ]; then
+                    echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+                    SETUP_SSL_METHOD="skip"
+                    return 1
+                fi
+                
+                reading_email "${LANG[SSL_ENTER_EMAIL]}" SETUP_CERT_EMAIL
+                return 0
+                ;;
+            4)
+                if [ -n "$existing_certs" ]; then
+                    SETUP_SSL_METHOD="existing"
+                    echo -e "${LANG[SSL_SELECT_CERT]}:"
+                    echo "$existing_certs" | nl -w2 -s'. ' | sed 's/^/  /'
+                    
+                    local cert_num
+                    reading "${LANG[SSL_ENTER_CERT_NUM]}" cert_num
+                    local selected_cert
+                    selected_cert=$(echo "$existing_certs" | sed -n "${cert_num}p")
+                    
+                    # Если выбран wildcard — найти папку с этим сертификатом
+                    if [[ "$selected_cert" == \*.* ]]; then
+                        # Ищем папку содержащую этот wildcard
+                        local wildcard_pattern="$selected_cert"
+                        for cert_dir in /etc/letsencrypt/live/*/; do
+                            local dir_name=$(basename "$cert_dir")
+                            [ "$dir_name" = "README" ] && continue
+                            local cert_domains=$(get_cert_domains "$dir_name")
+                            if echo "$cert_domains" | grep -qF "$wildcard_pattern"; then
+                                SETUP_EXISTING_CERT="$dir_name"
+                                break
+                            fi
+                        done
+                    else
+                        SETUP_EXISTING_CERT="$selected_cert"
+                    fi
+                    
+                    [ -n "$SETUP_EXISTING_CERT" ] && return 0
+                fi
+                SETUP_SSL_METHOD="skip"
+                return 1
+                ;;
+            *)
+                # Неверный ввод — показать ошибку и повторить
+                echo -e "${COLOR_RED}${LANG[INVALID_CHOICE]}${COLOR_RESET}"
+                continue
+                ;;
+        esac
+    done
+}
+
+# Применение настроек SSL (выполнение установки)
+apply_ssl_settings() {
+    local domain="$1"
+    
+    case "$SETUP_SSL_METHOD" in
+        cloudflare)
+            get_cert_cloudflare "$domain" "$SETUP_CERT_EMAIL" "$SETUP_CF_TOKEN"
+            return $?
             ;;
-        0|*)
-            # Пропустить SSL
+        acme)
+            get_cert_acme_standalone "$domain" "$SETUP_CERT_EMAIL"
+            return $?
+            ;;
+        gcore)
+            get_cert_gcore "$domain" "$SETUP_CERT_EMAIL" "$SETUP_GCORE_TOKEN"
+            return $?
+            ;;
+        existing)
+            use_existing_certs "$SETUP_EXISTING_CERT"
+            return $?
+            ;;
+        skip|*)
             return 1
             ;;
     esac
@@ -1741,8 +2851,9 @@ generate_nginx_block() {
 # xray-checker (added by xchecker installer)
 # ═══════════════════════════════════════════════════════════════
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name ${domain};
 
     ssl_certificate ${cert_path}/fullchain.pem;
@@ -1784,89 +2895,273 @@ EOF
 }
 
 # Добавить конфигурацию в существующий nginx
+# ВАЖНО: Эта функция использует уже собранные настройки (SETUP_SSL_METHOD, SETUP_EXISTING_CERT)
+# и НЕ должна задавать вопросы!
 add_to_nginx() {
     local domain="$1"
     local port="${2:-$DEFAULT_PORT}"
     local nginx_conf="$DETECTED_PROXY_PATH"
     local cert_path=""
 
-    # Проверка наличия существующих сертификатов
-    if [ -d "/etc/letsencrypt/live" ]; then
-        local existing_certs
-        existing_certs=$(list_existing_certs 2>/dev/null)
-        if [ -n "$existing_certs" ]; then
-            # Есть существующие сертификаты
-            echo ""
-            info "${LANG[SSL_CERTS_FOUND]}"
-            echo "$existing_certs"
-            echo ""
-            echo -e "${COLOR_WHITE}1. ${LANG[SSL_EXISTING]}${COLOR_RESET}"
-            echo -e "${COLOR_WHITE}2. ${LANG[SSL_OBTAIN_NEW]}${COLOR_RESET}"
-            echo -e "${COLOR_WHITE}0. ${LANG[BACK]}${COLOR_RESET}"
-            echo ""
-            local ssl_choice
-            reading "${LANG[SELECT_OPTION]}:" ssl_choice
+    # DEBUG: показать значения переменных
+    # echo "DEBUG: SETUP_SSL_METHOD=$SETUP_SSL_METHOD"
+    # echo "DEBUG: SETUP_EXISTING_CERT=$SETUP_EXISTING_CERT"
+    # echo "DEBUG: DETECTED_PROXY=$DETECTED_PROXY"
 
-            case "$ssl_choice" in
-                0) return 1 ;;
-                1)
-                    select_existing_cert "$domain"
-                    cert_path="$SELECTED_CERT_PATH"
-                    ;;
-                *)
-                    choose_ssl_method "$domain"
-                    cert_path="/etc/letsencrypt/live/${domain}"
-                    ;;
-            esac
-        else
-            # Нет сертификатов — получить новые
-            choose_ssl_method "$domain"
+    # Определить путь к сертификату из уже собранных настроек
+    case "$SETUP_SSL_METHOD" in
+        cloudflare|acme|gcore)
             cert_path="/etc/letsencrypt/live/${domain}"
-        fi
-    else
-        # Нет папки letsencrypt — получить новые
-        choose_ssl_method "$domain"
-        cert_path="/etc/letsencrypt/live/${domain}"
+            ;;
+        existing)
+            if [ -n "$SETUP_EXISTING_CERT" ]; then
+                cert_path="/etc/letsencrypt/live/${SETUP_EXISTING_CERT}"
+            else
+                warning "SETUP_EXISTING_CERT is empty"
+                cert_path=""
+            fi
+            ;;
+        skip|"")
+            cert_path=""
+            ;;
+    esac
+
+    # Проверить что сертификаты есть (если нужны)
+    if [ -n "$cert_path" ] && [ ! -d "$cert_path" ]; then
+        warning "SSL certificates not found at: ${cert_path}"
+        cert_path=""
     fi
 
-    # Проверить что сертификаты есть
-    if [ -z "$cert_path" ] || [ ! -d "$cert_path" ]; then
-        error "SSL certificates not found at: ${cert_path}"
-        return 1
+    # Создать backup если файл существует
+    if [ -f "$nginx_conf" ]; then
+        cp "$nginx_conf" "${nginx_conf}.backup.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
     fi
 
-    # Создать backup
-    cp "$nginx_conf" "${nginx_conf}.backup.$(date +%Y%m%d%H%M%S)"
-
-    # Добавить блок
+    # Генерируем конфиг
     local nginx_block
-    nginx_block=$(generate_nginx_block "$domain" "$port" "$cert_path")
-
-    # Для eGames nginx — добавляем перед последней закрывающей скобкой или в конец
-    if [ "$DETECTED_PROXY" = "egames_nginx" ]; then
-        echo "$nginx_block" >> "$nginx_conf"
+    if [ -n "$cert_path" ]; then
+        nginx_block=$(generate_nginx_block "$domain" "$port" "$cert_path")
+        HAS_SSL="true"
     else
-        # Для обычного nginx — создаём в sites-available
-        local site_file="/etc/nginx/sites-available/xray-checker"
-        echo "$nginx_block" > "$site_file"
-        ln -sf "$site_file" "/etc/nginx/sites-enabled/xray-checker"
+        # HTTP-only конфиг
+        nginx_block=$(cat <<EOF
+# xray-checker HTTP config (added by xchecker installer)
+server {
+    listen 80;
+    server_name ${domain};
+
+    location / {
+        proxy_pass http://127.0.0.1:${port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+)
+        HAS_SSL=""
     fi
+
+    # Применяем конфиг в зависимости от типа nginx
+    case "$DETECTED_PROXY" in
+        egames_nginx)
+            # eGames: добавляем в конец файла
+            echo "$nginx_block" >> "$nginx_conf"
+            ;;
+        docker_nginx)
+            # Docker nginx — нужен путь к конфигам
+            if [ -z "$DETECTED_PROXY_PATH" ]; then
+                warning "Docker nginx config path not found. Please configure manually."
+                echo -e "${COLOR_YELLOW}Nginx config block:${COLOR_RESET}"
+                echo "$nginx_block"
+                return 1
+            fi
+            
+            # Если путь это директория conf.d — пишем отдельный файл
+            if [[ "$DETECTED_PROXY_PATH" == *conf.d* ]] || [[ "$DETECTED_PROXY_PATH" == *conf\.d* ]]; then
+                echo "$nginx_block" > "${DETECTED_PROXY_PATH}/xray-checker.conf"
+            else
+                # Иначе добавляем в nginx.conf
+                echo "$nginx_block" >> "${DETECTED_PROXY_PATH}/nginx.conf"
+            fi
+            
+            # Копируем сертификаты если есть (в ту же директорию)
+            if [ -n "$cert_path" ] && [ -d "$cert_path" ]; then
+                local certs_dir="${DETECTED_PROXY_PATH%/conf.d}/certs"
+                mkdir -p "$certs_dir"
+                cp "${cert_path}/fullchain.pem" "$certs_dir/"
+                cp "${cert_path}/privkey.pem" "$certs_dir/"
+                # Меняем пути в конфиге на Docker-пути
+                local conf_file
+                if [[ "$DETECTED_PROXY_PATH" == *conf.d* ]]; then
+                    conf_file="${DETECTED_PROXY_PATH}/xray-checker.conf"
+                else
+                    conf_file="${DETECTED_PROXY_PATH}/nginx.conf"
+                fi
+                sed -i 's|ssl_certificate .*fullchain.pem;|ssl_certificate /etc/nginx/certs/fullchain.pem;|' "$conf_file"
+                sed -i 's|ssl_certificate_key .*privkey.pem;|ssl_certificate_key /etc/nginx/certs/privkey.pem;|' "$conf_file"
+                # Меняем proxy_pass на Docker network
+                sed -i 's|proxy_pass http://127.0.0.1:|proxy_pass http://xray-checker:|' "$conf_file"
+            fi
+            ;;
+        own_nginx)
+            # Наш собственный nginx в папке xray-checker
+            # При добавлении нового домена:
+            # 1. Добавить server block в nginx.conf (в конец файла)
+            # 2. Добавить volume mount для сертификата в docker-compose.yml
+            # ВАЖНО: upstream и глобальные SSL настройки уже есть в начале файла
+            local nginx_file="$DETECTED_PROXY_PATH"
+            local cert_domain=""
+            
+            # Определяем домен сертификата
+            if [ -n "$cert_path" ]; then
+                cert_domain=$(basename "$cert_path")
+            fi
+            
+            # Создаём новый server block для дополнительного домена
+            # Используем существующий upstream xray-checker и глобальные SSL настройки
+            local new_server_block=""
+            if [ -n "$cert_path" ] && [ -n "$cert_domain" ]; then
+                new_server_block="
+# Redirect HTTP to HTTPS for ${domain}
+server {
+    listen 80;
+    server_name ${domain};
+    return 301 https://\$host\$request_uri;
+}
+
+# HTTPS server for ${domain}
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${domain};
+
+    ssl_certificate /etc/nginx/ssl/${cert_domain}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/${cert_domain}/privkey.pem;
+    ssl_trusted_certificate /etc/nginx/ssl/${cert_domain}/fullchain.pem;
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_pass http://xray-checker;
+        proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}
+"
+                HAS_SSL="true"
+                
+                # Добавляем volume mount для нового сертификата в docker-compose.yml
+                # Проверяем не добавлен ли уже этот сертификат
+                if ! grep -q "/etc/letsencrypt/live/${cert_domain}/fullchain.pem" "$FILE_COMPOSE" 2>/dev/null; then
+                    # Добавляем перед строкой "depends_on:"
+                    sed -i "/depends_on:/i\\      - /etc/letsencrypt/live/${cert_domain}/fullchain.pem:/etc/nginx/ssl/${cert_domain}/fullchain.pem:ro" "$FILE_COMPOSE"
+                    sed -i "/depends_on:/i\\      - /etc/letsencrypt/live/${cert_domain}/privkey.pem:/etc/nginx/ssl/${cert_domain}/privkey.pem:ro" "$FILE_COMPOSE"
+                fi
+            else
+                new_server_block="
+# HTTP server for ${domain}
+server {
+    listen 80;
+    server_name ${domain};
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_pass http://xray-checker;
+        proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}
+"
+                HAS_SSL=""
+            fi
+            
+            # Добавляем новый server block в конец файла
+            echo "$new_server_block" >> "$nginx_file"
+            ;;
+        system_nginx)
+            # Системный nginx: sites-available/sites-enabled
+            if [ -d "/etc/nginx/sites-available" ]; then
+                echo "$nginx_block" > /etc/nginx/sites-available/xray-checker
+                ln -sf /etc/nginx/sites-available/xray-checker /etc/nginx/sites-enabled/xray-checker
+            elif [ -d "/etc/nginx/conf.d" ]; then
+                echo "$nginx_block" > /etc/nginx/conf.d/xray-checker.conf
+            else
+                warning "Unknown nginx config structure"
+                return 1
+            fi
+            ;;
+        *)
+            # Неизвестный тип — пытаемся найти conf.d
+            if [ -d "/etc/nginx/conf.d" ]; then
+                echo "$nginx_block" > /etc/nginx/conf.d/xray-checker.conf
+            else
+                warning "Cannot determine nginx config path"
+                return 1
+            fi
+            ;;
+    esac
 
     # Проверка конфигурации и перезагрузка
+    reload_nginx
+
+    return 0
+}
+
+# Перезагрузка nginx (определяет тип автоматически)
+reload_nginx() {
     if [ "$DETECTED_PROXY" = "egames_nginx" ] || [ "$DETECTED_PROXY" = "docker_nginx" ]; then
-        # Docker nginx
+        # Docker nginx (внешний)
         local container_name
         container_name=$(docker ps --format '{{.Names}}' | grep -iE "nginx|remnawave-nginx" | head -1)
         if [ -n "$container_name" ]; then
-            docker exec "$container_name" nginx -t 2>/dev/null && \
-            docker exec "$container_name" nginx -s reload 2>/dev/null
+            # Проверка конфигурации
+            if ! docker exec "$container_name" nginx -t 2>/dev/null; then
+                warning "Nginx configuration test failed"
+                return 1
+            fi
+            # Перезагрузка
+            docker exec "$container_name" nginx -s reload 2>/dev/null || {
+                # Если reload не работает — перезапуск контейнера
+                docker restart "$container_name" 2>/dev/null
+            }
+        fi
+    elif [ "$DETECTED_PROXY" = "own_nginx" ]; then
+        # Наш собственный nginx в той же папке
+        if docker ps --format '{{.Names}}' | grep -q "^nginx$"; then
+            # Проверка конфигурации
+            if ! docker exec nginx nginx -t 2>/dev/null; then
+                warning "Nginx configuration test failed"
+                return 1
+            fi
+            # Перезагрузка
+            docker exec nginx nginx -s reload 2>/dev/null || {
+                docker restart nginx 2>/dev/null
+            }
         fi
     else
         # System nginx
-        nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null
+        if command -v nginx &>/dev/null; then
+            nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null
+        fi
     fi
-
-    return 0
 }
 
 # Добавить конфигурацию в существующий Caddy
@@ -1892,6 +3187,7 @@ add_to_caddy() {
         systemctl reload caddy 2>/dev/null
     fi
 
+    HAS_SSL="true"  # Caddy автоматически получает SSL
     return 0
 }
 
@@ -1939,253 +3235,339 @@ networks:
     external: true
 EOF
 
-    docker compose up -d
+    docker compose pull >/dev/null 2>&1
+    docker compose up -d >/dev/null 2>&1
 
     DETECTED_PROXY="docker_caddy"
     DETECTED_PROXY_PATH="/opt/caddy/Caddyfile"
+    HAS_SSL="true"  # Caddy автоматически получает SSL
 
-    success "Caddy installed"
+    success "Caddy installed with auto SSL"
 }
 
-# Установка Nginx в Docker
-install_nginx_docker() {
+# Меню настройки Reverse Proxy (ФАЗА 1: Сбор данных)
+# Reverse proxy ОБЯЗАТЕЛЕН — без него установка невозможна
+# Параметр: $1 = "no_clear" - не очищать экран
+collect_reverse_proxy_settings() {
+    local no_clear="${1:-}"
+    
+    if [ "$no_clear" != "no_clear" ]; then
+        clear_screen
+    fi
+    
+    # Пустая строка перед заголовком (отделение от предыдущего блока)
+    echo ""
+    
+    # Компактный заголовок
+    echo -e "${COLOR_CYAN}── ${LANG[PROXY_TITLE]} ──${COLOR_RESET}"
+
+    # Сброс настроек
+    SETUP_PROXY_TYPE=""
+    SETUP_DOMAIN=""
+    XCHECKER_DOMAIN=""
+    INCLUDE_NGINX=""
+    INCLUDE_CADDY=""
+
+    # Определение окружения
+    echo -ne "${COLOR_GRAY}${LANG[DETECTING]}...${COLOR_RESET}"
+    detect_reverse_proxy
+    
+    local proxy_name
+    proxy_name=$(get_proxy_display_name)
+
+    if [ "$DETECTED_PROXY" != "none" ]; then
+        echo -e "\r${COLOR_GREEN}✓${COLOR_RESET} ${LANG[PROXY_DETECTED]}: ${COLOR_CYAN}${proxy_name}${COLOR_RESET}     "
+    else
+        echo -e "\r${COLOR_YELLOW}! ${LANG[PROXY_NONE]}${COLOR_RESET}                    "
+    fi
+
+    # Варианты меню — всегда показываем все опции
+    local choice
+    if [ "$DETECTED_PROXY" != "none" ]; then
+        # Proxy найден — первый вариант "использовать существующий"
+        echo -e "  1. ${LANG[PROXY_ADD_TO_EXISTING]} ${proxy_name}"
+        echo -e "  2. Caddy ${COLOR_GRAY}(auto SSL)${COLOR_RESET}"
+        echo -e "  ${COLOR_GRAY}0. ${LANG[BACK]}${COLOR_RESET}"
+        reading "${LANG[SELECT_OPTION]}" choice
+
+        case "$choice" in
+            1)
+                # Использовать существующий proxy
+                reading_domain "${LANG[PROXY_ENTER_DOMAIN]}" SETUP_DOMAIN
+                [ -z "$SETUP_DOMAIN" ] && return 1
+
+                case "$DETECTED_PROXY" in
+                    *nginx*) SETUP_PROXY_TYPE="existing_nginx" ;;
+                    *caddy*) SETUP_PROXY_TYPE="existing_caddy" ;;
+                esac
+
+                # Для nginx нужны SSL настройки, для Caddy — нет (auto SSL)
+                if [ "$SETUP_PROXY_TYPE" = "existing_nginx" ]; then
+                    if ! collect_ssl_settings "$SETUP_DOMAIN"; then
+                        # Пользователь отменил выбор SSL — вернуться назад
+                        SETUP_PROXY_TYPE=""
+                        SETUP_DOMAIN=""
+                        return 1
+                    fi
+                fi
+                
+                XCHECKER_DOMAIN="$SETUP_DOMAIN"
+                return 0
+                ;;
+            2)
+                # Установить Caddy
+                SETUP_PROXY_TYPE="caddy"
+                reading_domain "${LANG[PROXY_ENTER_DOMAIN]}" SETUP_DOMAIN
+                [ -z "$SETUP_DOMAIN" ] && return 1
+                XCHECKER_DOMAIN="$SETUP_DOMAIN"
+                return 0
+                ;;
+            *) return 1 ;;
+        esac
+    else
+        # Proxy НЕ найден — предлагаем установить
+        echo -e "  1. Nginx ${COLOR_GRAY}(${LANG[RECOMMENDED]})${COLOR_RESET}"
+        echo -e "  2. Caddy ${COLOR_GRAY}(auto SSL)${COLOR_RESET}"
+        echo -e "  ${COLOR_GRAY}0. ${LANG[BACK]}${COLOR_RESET}"
+        reading "${LANG[SELECT_OPTION]}" choice
+
+        case "$choice" in
+            1)
+                SETUP_PROXY_TYPE="nginx"
+                INCLUDE_NGINX="true"  # Будет добавлен в docker-compose.yml
+                reading_domain "${LANG[PROXY_ENTER_DOMAIN]}" SETUP_DOMAIN
+                [ -z "$SETUP_DOMAIN" ] && return 1
+                if ! collect_ssl_settings "$SETUP_DOMAIN"; then
+                    SETUP_PROXY_TYPE=""
+                    SETUP_DOMAIN=""
+                    INCLUDE_NGINX=""
+                    return 1
+                fi
+                XCHECKER_DOMAIN="$SETUP_DOMAIN"
+                return 0
+                ;;
+            2)
+                SETUP_PROXY_TYPE="caddy"
+                INCLUDE_CADDY="true"  # Будет добавлен в docker-compose.yml
+                reading_domain "${LANG[PROXY_ENTER_DOMAIN]}" SETUP_DOMAIN
+                [ -z "$SETUP_DOMAIN" ] && return 1
+                XCHECKER_DOMAIN="$SETUP_DOMAIN"
+                return 0
+                ;;
+            *) return 1 ;;
+        esac
+    fi
+    
+    return 0
+}
+
+# Применение настроек Reverse Proxy (ФАЗА 2: Установка)
+apply_reverse_proxy_settings() {
+    local port="${1:-$DEFAULT_PORT}"
+    
+    case "$SETUP_PROXY_TYPE" in
+        existing_nginx)
+            info "Configuring existing Nginx..."
+            # Сначала получаем SSL если нужно
+            if [ "$SETUP_SSL_METHOD" != "skip" ] && [ -n "$SETUP_SSL_METHOD" ]; then
+                apply_ssl_settings "$SETUP_DOMAIN"
+            fi
+            add_to_nginx "$SETUP_DOMAIN" "$port"
+            success "Reverse proxy configured for ${SETUP_DOMAIN}"
+            ;;
+        existing_caddy)
+            info "Configuring existing Caddy..."
+            add_to_caddy "$SETUP_DOMAIN" "$port"
+            success "Reverse proxy configured for ${SETUP_DOMAIN}"
+            ;;
+        nginx)
+            info "Installing Nginx..."
+            # Сначала получаем SSL если нужно
+            if [ "$SETUP_SSL_METHOD" != "skip" ] && [ -n "$SETUP_SSL_METHOD" ]; then
+                apply_ssl_settings "$SETUP_DOMAIN"
+            fi
+            install_nginx_docker_no_questions "$SETUP_DOMAIN" "$port"
+            ;;
+        caddy)
+            info "Installing Caddy..."
+            install_caddy_docker "$SETUP_DOMAIN" "$port"
+            ;;
+        skip|*)
+            # Ничего не делать
+            return 0
+            ;;
+    esac
+}
+
+# Установка Nginx Docker БЕЗ вопросов (использует уже собранные настройки)
+# Nginx создаётся в той же папке /opt/xray-checker/ и том же docker-compose.yml
+# Сертификаты монтируются напрямую из /etc/letsencrypt/ (автообновление certbot)
+install_nginx_docker_no_questions() {
     local domain="$1"
     local port="${2:-$DEFAULT_PORT}"
     local cert_path=""
+    local cert_domain=""  # Домен для сертификата (может отличаться от domain для wildcard)
 
-    info "Installing Nginx in Docker..."
-
-    # Получение SSL сертификата
-    echo ""
-    info "${LANG[SSL_TITLE]}"
-    
-    if [ -d "/etc/letsencrypt/live" ]; then
-        local existing_certs
-        existing_certs=$(list_existing_certs 2>/dev/null)
-        if [ -n "$existing_certs" ]; then
-            echo ""
-            info "${LANG[SSL_CERTS_FOUND]}"
-            echo "$existing_certs"
-            echo ""
-            echo -e "${COLOR_WHITE}1. ${LANG[SSL_EXISTING]}${COLOR_RESET}"
-            echo -e "${COLOR_WHITE}2. ${LANG[SSL_OBTAIN_NEW]}${COLOR_RESET}"
-            echo -e "${COLOR_WHITE}0. ${LANG[SSL_SKIP]}${COLOR_RESET}"
-            echo ""
-            local ssl_choice
-            reading "${LANG[SELECT_OPTION]}:" ssl_choice
-
-            case "$ssl_choice" in
-                0) cert_path="" ;;
-                1)
-                    select_existing_cert "$domain"
-                    cert_path="$SELECTED_CERT_PATH"
-                    ;;
-                *)
-                    choose_ssl_method "$domain"
-                    cert_path="/etc/letsencrypt/live/${domain}"
-                    ;;
-            esac
-        else
-            choose_ssl_method "$domain"
+    # Определить путь к сертификату из собранных настроек
+    case "$SETUP_SSL_METHOD" in
+        cloudflare|acme|gcore)
             cert_path="/etc/letsencrypt/live/${domain}"
+            cert_domain="${domain}"
+            ;;
+        existing)
+            cert_path="/etc/letsencrypt/live/${SETUP_EXISTING_CERT}"
+            cert_domain="${SETUP_EXISTING_CERT}"
+            ;;
+        *)
+            cert_path=""
+            cert_domain=""
+            ;;
+    esac
+
+    # Проверить что сертификаты есть напрямую в /etc/letsencrypt/live/
+    if [ -n "$cert_domain" ]; then
+        local letsencrypt_path="/etc/letsencrypt/live/${cert_domain}"
+        if [ ! -d "$letsencrypt_path" ] || [ ! -f "${letsencrypt_path}/fullchain.pem" ]; then
+            warning "SSL certificates not found at: ${letsencrypt_path}"
+            cert_path=""
+            cert_domain=""
         fi
-    else
-        choose_ssl_method "$domain"
-        cert_path="/etc/letsencrypt/live/${domain}"
     fi
 
-    # Проверить что сертификаты есть
-    if [ -z "$cert_path" ] || [ ! -d "$cert_path" ]; then
-        warning "SSL certificates not obtained. Installing HTTP-only nginx."
-        cert_path=""
-    fi
+    cd "$DIR_XRAY_CHECKER" 2>/dev/null || { mkdir -p "$DIR_XRAY_CHECKER" && cd "$DIR_XRAY_CHECKER"; }
 
-    mkdir -p /opt/nginx/conf.d
-    mkdir -p /opt/nginx/certs
-    cd /opt/nginx
-
-    # Создать nginx.conf
-    cat > nginx.conf <<EOF
-events {
-    worker_connections 1024;
-}
-
-http {
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
-
-    sendfile on;
-    keepalive_timeout 65;
-
-    include /etc/nginx/conf.d/*.conf;
-}
-EOF
-
-    # Создать server block
-    if [ -n "$cert_path" ] && [ -d "$cert_path" ]; then
+    # Создать nginx.conf (server blocks only, монтируется как default.conf)
+    # Структура как в install_remnawave.sh
+    if [ -n "$cert_domain" ] && [ -d "/etc/letsencrypt/live/${cert_domain}" ]; then
         # HTTPS конфигурация
-        cat > conf.d/xray-checker.conf <<EOF
+        cat > nginx.conf <<EOF
+# xray-checker nginx configuration
+# Generated by xchecker installer
+
+upstream xray-checker {
+    server xray-checker:2112;
+}
+
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    ""      close;
+}
+
+# SSL settings
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ecdh_curve X25519:prime256v1:secp384r1;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+ssl_prefer_server_ciphers off;
+ssl_session_timeout 1d;
+ssl_session_cache shared:SSL:10m;
+ssl_session_tickets off;
+
+# Redirect HTTP to HTTPS
 server {
     listen 80;
     server_name ${domain};
     return 301 https://\$host\$request_uri;
 }
 
+# HTTPS server for ${domain}
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name ${domain};
 
-    ssl_certificate /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-    
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
-    ssl_prefer_server_ciphers off;
+    ssl_certificate /etc/nginx/ssl/${cert_domain}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/${cert_domain}/privkey.pem;
+    ssl_trusted_certificate /etc/nginx/ssl/${cert_domain}/fullchain.pem;
 
     location / {
-        proxy_pass http://xray-checker:2112;
         proxy_http_version 1.1;
+        proxy_pass http://xray-checker;
         proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
     }
 }
 EOF
-        # Копировать сертификаты
-        cp "${cert_path}/fullchain.pem" /opt/nginx/certs/
-        cp "${cert_path}/privkey.pem" /opt/nginx/certs/
+        HAS_SSL="true"
+        # Сохраняем домен сертификата для docker-compose volumes
+        NGINX_CERT_DOMAIN="$cert_domain"
     else
         # HTTP-only конфигурация
-        cat > conf.d/xray-checker.conf <<EOF
+        cat > nginx.conf <<EOF
+# xray-checker nginx configuration
+# Generated by xchecker installer
+
+upstream xray-checker {
+    server xray-checker:2112;
+}
+
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    ""      close;
+}
+
+# HTTP server for ${domain}
 server {
     listen 80;
     server_name ${domain};
 
     location / {
-        proxy_pass http://xray-checker:2112;
         proxy_http_version 1.1;
+        proxy_pass http://xray-checker;
         proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
     }
 }
 EOF
+        HAS_SSL=""
+        NGINX_CERT_DOMAIN=""
     fi
 
-    # Создать docker-compose
-    cat > docker-compose.yml <<EOF
-services:
-  nginx:
-    image: nginx:alpine
-    container_name: nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./conf.d:/etc/nginx/conf.d:ro
-      - ./certs:/etc/nginx/certs:ro
-    networks:
-      - ${DOCKER_NETWORK}
-
-networks:
-  ${DOCKER_NETWORK}:
-    external: true
-EOF
-
-    docker compose up -d
-
-    DETECTED_PROXY="docker_nginx"
-    DETECTED_PROXY_PATH="/opt/nginx/conf.d/xray-checker.conf"
-
-    if [ -n "$cert_path" ]; then
-        success "Nginx installed with HTTPS"
-    else
-        success "Nginx installed (HTTP only)"
-        warning "SSL certificates need to be configured manually"
-    fi
+    # Помечаем что nginx наш (в той же папке)
+    DETECTED_PROXY="own_nginx"
+    DETECTED_PROXY_PATH="${DIR_XRAY_CHECKER}nginx.conf"
+    
+    # INCLUDE_NGINX уже установлен в collect_reverse_proxy_settings
+    INCLUDE_NGINX="true"
+    
+    # Сохраняем данные для повторных запусков
+    save_installer_config "PROXY_TYPE" "nginx"
+    [ -n "$NGINX_CERT_DOMAIN" ] && save_installer_config "CERT_DOMAIN" "$NGINX_CERT_DOMAIN"
 }
 
-# Меню настройки Reverse Proxy
+# Функция для настройки/перенастройки reverse proxy из меню управления
 setup_reverse_proxy() {
-    clear_screen
-    print_header "${LANG[PROXY_TITLE]}"
-
-    # Определение окружения
-    info "Detecting environment..."
-    detect_reverse_proxy
-
-    local proxy_name
-    proxy_name=$(get_proxy_display_name)
-
-    echo ""
-    if [ "$DETECTED_PROXY" != "none" ]; then
-        echo -e "  ${COLOR_GREEN}✓${COLOR_RESET} ${LANG[PROXY_DETECTED]}: ${COLOR_CYAN}${proxy_name}${COLOR_RESET}"
-        [ -n "$DETECTED_PROXY_PATH" ] && echo -e "    ${COLOR_GRAY}Path: ${DETECTED_PROXY_PATH}${COLOR_RESET}"
-        [ "$DETECTED_CERTS" = "letsencrypt" ] && echo -e "    ${COLOR_GRAY}SSL: Let's Encrypt certificates found${COLOR_RESET}"
-    else
-        echo -e "  ${COLOR_YELLOW}!${COLOR_RESET} ${LANG[PROXY_NONE]}"
-    fi
-    echo ""
-
-    # Варианты в зависимости от обнаруженного proxy
-    if [ "$DETECTED_PROXY" != "none" ]; then
-        print_menu_item "1" "${LANG[PROXY_USE_EXISTING]} ${proxy_name}"
-        print_menu_item "2" "${LANG[PROXY_SKIP]}"
-        print_menu_item "0" "${LANG[BACK]}"
+    # Проверяем, есть ли уже настроенный reverse proxy
+    if xray_checker_proxy_exists; then
         echo ""
-
-        local choice
-        reading "${LANG[SELECT_OPTION]}:" choice
-
-        case "$choice" in
-            1)
-                # Использовать существующий proxy
-                reading_required "${LANG[PROXY_ENTER_DOMAIN]}" XCHECKER_DOMAIN
-
-                case "$DETECTED_PROXY" in
-                    *nginx*) add_to_nginx "$XCHECKER_DOMAIN" "$DEFAULT_PORT" ;;
-                    *caddy*) add_to_caddy "$XCHECKER_DOMAIN" "$DEFAULT_PORT" ;;
-                esac
-
-                success "Reverse proxy configured for ${XCHECKER_DOMAIN}"
-                ;;
-            2|0)
-                XCHECKER_DOMAIN=""
-                return 0
-                ;;
-        esac
-    else
-        print_menu_item "1" "${LANG[PROXY_CADDY]}" "${LANG[RECOMMENDED]}"
-        print_menu_item "2" "${LANG[PROXY_NGINX]}"
-        print_menu_item "3" "${LANG[PROXY_SKIP]}"
-        print_menu_item "0" "${LANG[BACK]}"
+        warning "${LANG[PROXY_ALREADY_CONFIGURED]}"
+        echo -e "${COLOR_GRAY}${LANG[PROXY_ALREADY_HINT]}${COLOR_RESET}"
         echo ""
-
-        local choice
-        reading "${LANG[SELECT_OPTION]}:" choice
-
-        case "$choice" in
-            1)
-                reading_required "${LANG[PROXY_ENTER_DOMAIN]}" XCHECKER_DOMAIN
-                install_caddy_docker "$XCHECKER_DOMAIN" "$DEFAULT_PORT"
-                ;;
-            2)
-                reading_required "${LANG[PROXY_ENTER_DOMAIN]}" XCHECKER_DOMAIN
-                install_nginx_docker "$XCHECKER_DOMAIN" "$DEFAULT_PORT"
-                ;;
-            3|0)
-                XCHECKER_DOMAIN=""
-                return 0
-                ;;
-        esac
+        read -r -p "${LANG[PRESS_ENTER]}"
+        return 0
     fi
-
+    
+    collect_reverse_proxy_settings
+    if [ -n "$SETUP_PROXY_TYPE" ] && [ -n "$SETUP_DOMAIN" ]; then
+        echo ""
+        info "Starting installation..."
+        apply_reverse_proxy_settings "$DEFAULT_PORT"
+    fi
     read -r -p "${LANG[PRESS_ENTER]}"
 }
 
@@ -2271,6 +3653,24 @@ generate_docker_compose() {
     local port="${1:-$DEFAULT_PORT}"
     local bind_host="${2:-0.0.0.0}"  # По умолчанию открыт наружу
 
+    # Проверяем сохранённый флаг (для повторных запусков)
+    local saved_proxy_type
+    saved_proxy_type=$(get_installer_config "PROXY_TYPE")
+    if [ "$saved_proxy_type" = "nginx" ]; then
+        INCLUDE_NGINX="true"
+    fi
+    
+    # Читаем сохранённый домен сертификата
+    # Но проверяем что сертификат реально существует в /etc/letsencrypt/live/
+    local saved_cert_domain
+    saved_cert_domain=$(get_installer_config "CERT_DOMAIN")
+    if [ -n "$saved_cert_domain" ] && [ -d "/etc/letsencrypt/live/${saved_cert_domain}" ]; then
+        NGINX_CERT_DOMAIN="$saved_cert_domain"
+    else
+        NGINX_CERT_DOMAIN=""
+    fi
+
+    # Начинаем docker-compose.yml
     cat > "$FILE_COMPOSE" <<EOF
 services:
   xray-checker:
@@ -2287,6 +3687,40 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+EOF
+
+    # Если нужен nginx, добавляем его сервис
+    if [ "$INCLUDE_NGINX" = "true" ]; then
+        cat >> "$FILE_COMPOSE" <<EOF
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+EOF
+
+        # Добавляем монтирование сертификатов напрямую из /etc/letsencrypt/
+        # Это позволяет certbot автоматически обновлять сертификаты
+        if [ -n "$NGINX_CERT_DOMAIN" ] && [ -d "/etc/letsencrypt/live/${NGINX_CERT_DOMAIN}" ]; then
+            cat >> "$FILE_COMPOSE" <<EOF
+      - /etc/letsencrypt/live/${NGINX_CERT_DOMAIN}/fullchain.pem:/etc/nginx/ssl/${NGINX_CERT_DOMAIN}/fullchain.pem:ro
+      - /etc/letsencrypt/live/${NGINX_CERT_DOMAIN}/privkey.pem:/etc/nginx/ssl/${NGINX_CERT_DOMAIN}/privkey.pem:ro
+EOF
+        fi
+
+        cat >> "$FILE_COMPOSE" <<EOF
+    depends_on:
+      - xray-checker
+EOF
+    fi
+
+    # Завершаем файл секцией networks
+    cat >> "$FILE_COMPOSE" <<EOF
 
 networks:
   default:
@@ -2538,7 +3972,7 @@ install_binary_method() {
     systemctl start xray-checker
 
     # Записать метод установки
-    echo "binary" > "$FILE_METHOD"
+    save_installer_config "INSTALL_METHOD" "binary"
 
     return 0
 }
@@ -2597,61 +4031,65 @@ quick_install() {
     clear_screen
     print_header "${LANG[MENU_QUICK_INSTALL]}"
 
-    echo -e "${COLOR_WHITE}${LANG[QUICK_INSTALL_DESC]}${COLOR_RESET}"
-    echo ""
+    echo -e "${COLOR_GRAY}${LANG[QUICK_INSTALL_DESC]}${COLOR_RESET}"
     echo -e "${COLOR_GRAY}${LANG[ENTER_0_TO_BACK]}${COLOR_RESET}"
     echo ""
 
-    # 1. Запрос URL подписки (с авто-добавлением https://)
-    local sub_input=""
-    while [ -z "$sub_input" ]; do
-        reading "${LANG[ENTER_SUBSCRIPTION_URL]}" sub_input
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ФАЗА 1: СБОР ДАННЫХ (все вопросы)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 1. Запрос подписки (URL, file://, folder://)
+    local sub_url=""
+    while true; do
+        local sub_input=""
+        reading "${LANG[ENTER_SUBSCRIPTION]}" sub_input
+        
+        # Проверка на выход
+        if [ "$sub_input" = "0" ]; then
+            return
+        fi
+        
         if [ -z "$sub_input" ]; then
             echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+            continue
         fi
+        
+        # Автоматически добавляем https:// если не указан протокол
+        if [[ ! "$sub_input" =~ ^https?:// ]] && [[ ! "$sub_input" =~ ^file:// ]] && [[ ! "$sub_input" =~ ^folder:// ]]; then
+            sub_url="https://${sub_input}"
+        else
+            sub_url="$sub_input"
+        fi
+        
+        # Валидация URL
+        if validate_subscription_url "$sub_url"; then
+            break
+        fi
+        # Если валидация не прошла — повторить ввод
     done
+
+    # 2. Настройка Reverse Proxy (обязательно, без очистки экрана)
+    local bind_host="127.0.0.1"
     
-    # Проверка на выход
-    if [ "$sub_input" = "0" ]; then
+    # Сбор настроек reverse proxy (домен, SSL метод, токены)
+    collect_reverse_proxy_settings "no_clear"
+    
+    # Если пользователь отменил — вернуться в меню
+    if [ -z "$SETUP_PROXY_TYPE" ] || [ -z "$SETUP_DOMAIN" ]; then
         return
     fi
-    
-    # Автоматически добавляем https:// если не указан протокол
-    local sub_url
-    if [[ ! "$sub_input" =~ ^https?:// ]] && [[ ! "$sub_input" =~ ^file:// ]] && [[ ! "$sub_input" =~ ^folder:// ]]; then
-        sub_url="https://${sub_input}"
-    else
-        sub_url="$sub_input"
-    fi
 
-    # 2. Способ доступа
-    echo ""
-    echo -e "${COLOR_CYAN}${LANG[ACCESS_METHOD_TITLE]}${COLOR_RESET}"
-    echo ""
-    print_menu_item "1" "${LANG[ACCESS_DIRECT_IP]}"
-    echo -e "      ${COLOR_GRAY}${LANG[ACCESS_DIRECT_IP_DESC]}${COLOR_RESET}"
-    print_menu_item "2" "${LANG[ACCESS_REVERSE_PROXY]}"
-    echo -e "      ${COLOR_GRAY}${LANG[ACCESS_REVERSE_PROXY_DESC]}${COLOR_RESET}"
-    print_menu_item "0" "${LANG[BACK]}"
-    echo ""
-
-    local access_method
-    reading "${LANG[SELECT_OPTION]}:" access_method
-    
-    [ "$access_method" = "0" ] && return
-
-    local bind_host="0.0.0.0"
-    local setup_proxy="n"
-    
-    if [ "$access_method" = "2" ]; then
-        bind_host="127.0.0.1"
-        setup_proxy="y"
-    fi
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ФАЗА 2: УСТАНОВКА (без вопросов)
+    # ═══════════════════════════════════════════════════════════════════════════
 
     echo ""
+    info "${LANG[STARTING_SERVICE]}"
+
     info "${LANG[CHECKING_SYSTEM]}"
 
-    # Проверки и установка
+    # Проверки и установка зависимостей
     check_os
     install_packages
     install_docker
@@ -2660,38 +4098,46 @@ quick_install() {
     docker network inspect "$DOCKER_NETWORK" >/dev/null 2>&1 || \
         docker network create "$DOCKER_NETWORK" >/dev/null 2>&1
 
-    # Создание директории
+    # Создание директории (сначала перейти в безопасное место)
+    cd /tmp 2>/dev/null || cd /
     mkdir -p "$DIR_XRAY_CHECKER"
-    cd "$DIR_XRAY_CHECKER"
+    cd "$DIR_XRAY_CHECKER" || { error "Cannot change to $DIR_XRAY_CHECKER"; return 1; }
 
     # Генерация учётных данных
     generate_credentials
 
-    # Генерация конфигурации
+    # Подготовка reverse proxy (создаёт nginx.conf/Caddyfile, сертификаты)
+    # Должно быть ДО generate_docker_compose, т.к. устанавливает INCLUDE_NGINX
+    apply_reverse_proxy_settings "$DEFAULT_PORT"
+
+    # Генерация конфигурации (учитывает INCLUDE_NGINX/INCLUDE_CADDY)
     info "${LANG[CREATING_CONFIG]}"
     generate_env_file "$sub_url" "$DEFAULT_PORT" "true" "$METRICS_USERNAME" "$METRICS_PASSWORD" "false"
     generate_docker_compose "$DEFAULT_PORT" "$bind_host"
 
     # Сохранение метода установки
-    echo "docker" > "$FILE_METHOD"
+    save_installer_config "INSTALL_METHOD" "docker"
 
-    # Запуск
+    # Запуск всех сервисов (xray-checker + nginx/caddy если нужно)
     info "${LANG[STARTING_SERVICE]}"
     docker compose pull >/dev/null 2>&1
     docker compose up -d >/dev/null 2>&1
 
-    # Проверка здоровья
-    sleep 3
+    # Проверка здоровья (даём время на запуск)
     info "${LANG[CHECKING_HEALTH]}"
-    if curl -sf "http://127.0.0.1:${DEFAULT_PORT}/health" >/dev/null 2>&1; then
+    local health_ok=false
+    for i in {1..10}; do
+        sleep 2
+        if curl -sf "http://127.0.0.1:${DEFAULT_PORT}/health" >/dev/null 2>&1; then
+            health_ok=true
+            break
+        fi
+    done
+    
+    if [ "$health_ok" = true ]; then
         success "${LANG[CHECKING_HEALTH]}"
     else
         warning "${LANG[ERROR_HEALTH]}"
-    fi
-
-    # Настройка reverse proxy если выбрано
-    if [ "$setup_proxy" = "y" ]; then
-        setup_reverse_proxy
     fi
 
     # Установка alias
@@ -2708,8 +4154,13 @@ custom_install() {
     clear_screen
     print_header "${LANG[MENU_CUSTOM_INSTALL]}"
 
-    echo -e "${COLOR_WHITE}${LANG[CUSTOM_INSTALL_DESC]}${COLOR_RESET}"
+    echo -e "${COLOR_GRAY}${LANG[CUSTOM_INSTALL_DESC]}${COLOR_RESET}"
+    echo -e "${COLOR_GRAY}${LANG[ENTER_0_TO_BACK]}${COLOR_RESET}"
     echo ""
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ФАЗА 1: СБОР ДАННЫХ (все вопросы)
+    # ═══════════════════════════════════════════════════════════════════════════
 
     # 1. Метод установки
     echo -e "${COLOR_CYAN}${LANG[CHOOSE_INSTALL_METHOD]}${COLOR_RESET}"
@@ -2748,9 +4199,34 @@ custom_install() {
             fi
             ;;
         1|*)
-            # Ручной ввод
+            # Ручной ввод (как в quick_install)
             echo ""
-            reading_url "${LANG[ENTER_SUBSCRIPTION_URL]}" sub_url
+            while true; do
+                local sub_input=""
+                reading "${LANG[ENTER_SUBSCRIPTION]}" sub_input
+                
+                # Проверка на выход
+                if [ "$sub_input" = "0" ]; then
+                    return
+                fi
+                
+                if [ -z "$sub_input" ]; then
+                    echo -e "${COLOR_RED}${LANG[FIELD_REQUIRED]}${COLOR_RESET}"
+                    continue
+                fi
+                
+                # Автоматически добавляем https:// если не указан протокол
+                if [[ ! "$sub_input" =~ ^https?:// ]] && [[ ! "$sub_input" =~ ^file:// ]] && [[ ! "$sub_input" =~ ^folder:// ]]; then
+                    sub_url="https://${sub_input}"
+                else
+                    sub_url="$sub_input"
+                fi
+                
+                # Валидация URL
+                if validate_subscription_url "$sub_url"; then
+                    break
+                fi
+            done
             ;;
     esac
 
@@ -2783,34 +4259,55 @@ custom_install() {
     local web_public="false"
     [ "$public_dashboard" = "y" ] && web_public="true"
 
-    # 6. Reverse Proxy
-    echo ""
-    local setup_proxy
-    reading_yn "Setup reverse proxy (domain + SSL)?" setup_proxy "n"
+    # 6. Reverse Proxy (обязательно, без очистки экрана)
+    collect_reverse_proxy_settings "no_clear"
+    
+    # Если пользователь отменил — вернуться в меню
+    if [ -z "$SETUP_PROXY_TYPE" ] || [ -z "$SETUP_DOMAIN" ]; then
+        return
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ФАЗА 2: УСТАНОВКА (без вопросов)
+    # ═══════════════════════════════════════════════════════════════════════════
 
     echo ""
+    info "${LANG[STARTING_SERVICE]}"
+
     info "${LANG[CHECKING_SYSTEM]}"
 
-    # Установка
+    # Проверки и установка зависимостей
     check_os
     install_packages
 
+    local bind_host="127.0.0.1"
+
     case "$install_method" in
-        1|docker)
+        1|docker|"")
             install_docker
 
+            # Создание Docker-сети если нет
             docker network inspect "$DOCKER_NETWORK" >/dev/null 2>&1 || \
                 docker network create "$DOCKER_NETWORK" >/dev/null 2>&1
 
+            # Создание директории (сначала перейти в безопасное место)
+            cd /tmp 2>/dev/null || cd /
             mkdir -p "$DIR_XRAY_CHECKER"
-            cd "$DIR_XRAY_CHECKER"
+            cd "$DIR_XRAY_CHECKER" || { error "Cannot change to $DIR_XRAY_CHECKER"; return 1; }
 
+            # Подготовка reverse proxy (создаёт nginx.conf/Caddyfile, сертификаты)
+            # Должно быть ДО generate_docker_compose, т.к. устанавливает INCLUDE_NGINX
+            apply_reverse_proxy_settings "$port"
+
+            # Генерация конфигурации (учитывает INCLUDE_NGINX/INCLUDE_CADDY)
             info "${LANG[CREATING_CONFIG]}"
             generate_env_file "$sub_url" "$port" "$protected" "$username" "$password" "$web_public"
-            generate_docker_compose "$port"
+            generate_docker_compose "$port" "$bind_host"
 
-            echo "docker" > "$FILE_METHOD"
+            # Сохранение метода установки
+            save_installer_config "INSTALL_METHOD" "docker"
 
+            # Запуск всех сервисов (xray-checker + nginx/caddy если нужно)
             info "${LANG[STARTING_SERVICE]}"
             docker compose pull >/dev/null 2>&1
             docker compose up -d >/dev/null 2>&1
@@ -2820,18 +4317,21 @@ custom_install() {
             ;;
     esac
 
-    # Проверка здоровья
-    sleep 3
+    # Проверка здоровья (даём время на запуск)
     info "${LANG[CHECKING_HEALTH]}"
-    if curl -sf "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
+    local health_ok=false
+    for i in {1..10}; do
+        sleep 2
+        if curl -sf "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
+            health_ok=true
+            break
+        fi
+    done
+    
+    if [ "$health_ok" = true ]; then
         success "${LANG[CHECKING_HEALTH]}"
     else
         warning "${LANG[ERROR_HEALTH]}"
-    fi
-
-    # Настройка reverse proxy если выбрано
-    if [ "$setup_proxy" = "y" ]; then
-        setup_reverse_proxy
     fi
 
     # Установка alias
@@ -2852,11 +4352,11 @@ show_credentials() {
     print_box_line_text "${COLOR_WHITE}🔐 ${LANG[CREDENTIALS_TITLE]}${COLOR_RESET}" 60
     print_box_bottom 60
     echo ""
-    echo -e "  ${COLOR_WHITE}${LANG[USERNAME]}:${COLOR_RESET}  ${COLOR_YELLOW}${METRICS_USERNAME}${COLOR_RESET}"
-    echo -e "  ${COLOR_WHITE}${LANG[PASSWORD]}:${COLOR_RESET}  ${COLOR_YELLOW}${METRICS_PASSWORD}${COLOR_RESET}"
+    echo -e "    ${COLOR_WHITE}${LANG[USERNAME]}:${COLOR_RESET}  ${COLOR_YELLOW}${METRICS_USERNAME}${COLOR_RESET}"
+    echo -e "    ${COLOR_WHITE}${LANG[PASSWORD]}:${COLOR_RESET}  ${COLOR_YELLOW}${METRICS_PASSWORD}${COLOR_RESET}"
     echo ""
-    echo -e "  ${COLOR_GRAY}${LANG[CREDENTIALS_HINT]}${COLOR_RESET}"
-    echo -e "  ${COLOR_GRAY}${LANG[CREDENTIALS_FILE]}: ${FILE_ENV}${COLOR_RESET}"
+    echo -e "    ${COLOR_GRAY}${LANG[CREDENTIALS_HINT]}${COLOR_RESET}"
+    echo -e "    ${COLOR_GRAY}${LANG[CREDENTIALS_FILE]}: ${FILE_ENV}${COLOR_RESET}"
     echo ""
 }
 
@@ -2866,35 +4366,20 @@ show_install_success() {
     ip=$(get_server_ip)
 
     echo ""
-    print_box_top 60
-    print_box_line_text "${COLOR_WHITE}✅ ${LANG[INSTALL_COMPLETE]}${COLOR_RESET}" 60
-    print_box_bottom 60
-    echo ""
-    echo -e "  ${COLOR_WHITE}${LANG[WEB_INTERFACE]}:${COLOR_RESET}"
-    if [ -n "$XCHECKER_DOMAIN" ]; then
-        echo -e "    ${COLOR_CYAN}https://${XCHECKER_DOMAIN}${COLOR_RESET} ${COLOR_GREEN}(secure)${COLOR_RESET}"
-    fi
-    echo -e "    ${COLOR_CYAN}http://${ip}:${port}${COLOR_RESET} ${COLOR_GRAY}(direct)${COLOR_RESET}"
-    echo ""
-    echo -e "  ${COLOR_WHITE}${LANG[METRICS_ENDPOINT]}:${COLOR_RESET}"
-    if [ -n "$XCHECKER_DOMAIN" ]; then
-        echo -e "    ${COLOR_CYAN}https://${XCHECKER_DOMAIN}/metrics${COLOR_RESET}"
-    fi
-    echo -e "    ${COLOR_CYAN}http://${ip}:${port}/metrics${COLOR_RESET}"
-    echo ""
-    echo -e "  ${COLOR_WHITE}${LANG[HEALTH_ENDPOINT]}:${COLOR_RESET}"
-    echo -e "    ${COLOR_CYAN}http://${ip}:${port}/health${COLOR_RESET}"
+    echo -e "  ${COLOR_GREEN}✅ ${LANG[INSTALL_COMPLETE]}${COLOR_RESET}"
     echo ""
     
-    # Предупреждение о HTTP если нет домена
-    if [ -z "$XCHECKER_DOMAIN" ]; then
-        echo -e "  ${COLOR_YELLOW}⚠️  ${LANG[HTTP_WARNING]}${COLOR_RESET}"
-        echo -e "  ${COLOR_GRAY}${LANG[HTTPS_RECOMMENDED]}${COLOR_RESET}"
-        echo ""
+    # Если есть домен с SSL — показываем только HTTPS
+    if [ -n "$XCHECKER_DOMAIN" ] && [ "$HAS_SSL" = "true" ]; then
+        echo -e "    ${COLOR_WHITE}${LANG[WEB_INTERFACE]}:${COLOR_RESET}  ${COLOR_CYAN}https://${XCHECKER_DOMAIN}${COLOR_RESET}"
+    elif [ -n "$XCHECKER_DOMAIN" ]; then
+        echo -e "    ${COLOR_WHITE}${LANG[WEB_INTERFACE]}:${COLOR_RESET}  ${COLOR_CYAN}http://${XCHECKER_DOMAIN}${COLOR_RESET}"
+    else
+        echo -e "    ${COLOR_WHITE}${LANG[WEB_INTERFACE]}:${COLOR_RESET}  ${COLOR_CYAN}http://${ip}:${port}${COLOR_RESET}"
     fi
+    echo ""
     
-    echo -e "  ${COLOR_WHITE}${LANG[RERUN_CMD]}:${COLOR_RESET}"
-    echo -e "    ${COLOR_YELLOW}xchecker${COLOR_RESET}"
+    echo -e "    ${COLOR_WHITE}${LANG[RERUN_CMD]}:${COLOR_RESET} ${COLOR_YELLOW}xchecker${COLOR_RESET}"
     echo ""
 }
 
@@ -2973,8 +4458,8 @@ service_menu() {
 }
 
 service_start() {
-    local method=""
-    [ -f "$FILE_METHOD" ] && method=$(cat "$FILE_METHOD")
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
 
     case "$method" in
         docker)
@@ -2995,8 +4480,8 @@ service_start() {
 }
 
 service_stop() {
-    local method=""
-    [ -f "$FILE_METHOD" ] && method=$(cat "$FILE_METHOD")
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
 
     case "$method" in
         docker)
@@ -3016,8 +4501,15 @@ service_stop() {
 }
 
 service_restart() {
-    local method=""
-    [ -f "$FILE_METHOD" ] && method=$(cat "$FILE_METHOD")
+    # Проверяем, запущен ли сервис
+    if ! is_checker_running; then
+        warning "${LANG[SERVICE_NOT_RUNNING]}"
+        read -r -p "${LANG[PRESS_ENTER]}"
+        return
+    fi
+    
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
 
     case "$method" in
         docker)
@@ -3038,8 +4530,8 @@ service_restart() {
 }
 
 service_logs() {
-    local method=""
-    [ -f "$FILE_METHOD" ] && method=$(cat "$FILE_METHOD")
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
 
     case "$method" in
         docker)
@@ -3057,8 +4549,8 @@ service_logs() {
 }
 
 service_update() {
-    local method=""
-    [ -f "$FILE_METHOD" ] && method=$(cat "$FILE_METHOD")
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
 
     case "$method" in
         docker)
@@ -3153,15 +4645,18 @@ uninstall() {
     echo ""
 
     # Определить метод установки
-    local method=""
-    [ -f "$FILE_METHOD" ] && method=$(cat "$FILE_METHOD")
+    local method
+    method=$(get_installer_config "INSTALL_METHOD")
+
+    # Перейти в безопасное место перед удалением
+    cd /tmp 2>/dev/null || cd /
 
     case "$method" in
         docker)
             # Остановка и удаление контейнера
             if [ -f "$FILE_COMPOSE" ]; then
-                cd "$DIR_XRAY_CHECKER"
-                docker compose down -v 2>/dev/null
+                cd "$DIR_XRAY_CHECKER" 2>/dev/null && docker compose down -v 2>/dev/null
+                cd /tmp 2>/dev/null || cd /
             fi
 
             # Удаление образа
@@ -3174,8 +4669,8 @@ uninstall() {
         *)
             # На всякий случай пробуем оба способа
             if [ -f "$FILE_COMPOSE" ]; then
-                cd "$DIR_XRAY_CHECKER"
-                docker compose down -v 2>/dev/null
+                cd "$DIR_XRAY_CHECKER" 2>/dev/null && docker compose down -v 2>/dev/null
+                cd /tmp 2>/dev/null || cd /
                 docker rmi "$DOCKER_IMAGE" 2>/dev/null
             fi
             if systemctl is-active --quiet xray-checker 2>/dev/null; then
@@ -3184,8 +4679,9 @@ uninstall() {
             ;;
     esac
 
-    # Удаление директории
+    # Удаление директорий
     rm -rf "$DIR_XRAY_CHECKER"
+    rm -rf "$DIR_INSTALLER_CONFIG"
 
     # Удаление alias из bashrc
     sed -i '/xray-checker installer/d' /root/.bashrc 2>/dev/null
@@ -3207,6 +4703,18 @@ main_menu() {
     while true; do
         clear_screen
 
+        # Получаем версию установленного xray-checker
+        local checker_version=""
+        local checker_status=""
+        if is_checker_installed; then
+            checker_version=$(get_checker_version)
+            if is_checker_running; then
+                checker_status="●"
+            else
+                checker_status="○"
+            fi
+        fi
+
         echo ""
         print_box_top 60
         print_box_empty 60
@@ -3214,6 +4722,18 @@ main_menu() {
         print_box_line_text "${COLOR_WHITE}█░█ █▀▄ █▀█ ░█░ ░░ █▄▄ █▀█ ██▄ █▄▄ █░█ ██▄ █▀▄${COLOR_RESET}" 60
         print_box_empty 60
         print_box_line_text "${COLOR_GRAY}${LANG[VERSION]}: ${SCRIPT_VERSION}${COLOR_RESET}" 60
+        
+        # Показываем версию xray-checker если установлен
+        if [ -n "$checker_version" ]; then
+            if [ "$checker_status" = "●" ]; then
+                print_box_line_text "${COLOR_GREEN}${checker_status}${COLOR_RESET} ${COLOR_GRAY}${LANG[CHECKER_VERSION]}: ${checker_version}${COLOR_RESET}" 60
+            else
+                print_box_line_text "${COLOR_YELLOW}${checker_status}${COLOR_RESET} ${COLOR_GRAY}${LANG[CHECKER_VERSION]}: ${checker_version}${COLOR_RESET}" 60
+            fi
+        else
+            print_box_line_text "${COLOR_GRAY}${LANG[CHECKER_VERSION]}: ${LANG[NOT_INSTALLED]}${COLOR_RESET}" 60
+        fi
+        
         print_box_empty 60
         print_box_bottom 60
         echo ""
@@ -3223,6 +4743,7 @@ main_menu() {
         print_menu_item "3" "📊 ${LANG[MENU_MANAGE]}"
         print_menu_item "4" "🔄 ${LANG[MENU_UPDATE_SCRIPT]}"
         print_menu_item "5" "🗑️  ${LANG[MENU_UNINSTALL]}"
+        print_menu_item "6" "🌐 ${LANG[MENU_LANGUAGE]}"
         echo ""
         print_menu_item "0" "${LANG[EXIT]}"
         echo ""
@@ -3236,6 +4757,7 @@ main_menu() {
             3) service_menu ;;
             4) update_script ;;
             5) uninstall ;;
+            6) select_language ;;
             0) clear_screen; exit 0 ;;
             *) ;;
         esac
@@ -3251,7 +4773,9 @@ main() {
     check_root
 
     # Загрузить сохранённый язык или выбрать
-    if [ -f "$FILE_LANG" ]; then
+    local saved_lang
+    saved_lang=$(get_installer_config "LANGUAGE")
+    if [ -n "$saved_lang" ]; then
         load_language
     else
         select_language
