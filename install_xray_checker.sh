@@ -43,7 +43,7 @@ export LC_ALL=C.UTF-8
 # ВЕРСИЯ И КОНСТАНТЫ
 # ══════════════════════════════════════════════════════════════════════════════
 
-SCRIPT_VERSION="0.0.3-alpha"
+SCRIPT_VERSION="0.0.4-alpha"
 SCRIPT_NAME="install_xray_checker.sh"
 SCRIPT_URL="https://raw.githubusercontent.com/UnderGut/xray-checker-installer/main/install_xray_checker.sh"
 
@@ -3202,6 +3202,8 @@ install_caddy_docker() {
     cd /opt/caddy
 
     # Создать Caddyfile
+    # ВАЖНО: Caddy общается с xray-checker через Docker network
+    # Внутренний порт контейнера ВСЕГДА 2112
     cat > Caddyfile <<EOF
 # Caddy configuration for xray-checker
 ${domain} {
@@ -3438,6 +3440,10 @@ install_nginx_docker_no_questions() {
 
     # Создать nginx.conf (server blocks only, монтируется как default.conf)
     # Структура как в install_remnawave.sh
+    # ВАЖНО: nginx общается с xray-checker через Docker network
+    # Внутренний порт контейнера ВСЕГДА 2112, независимо от METRICS_PORT
+    # METRICS_PORT влияет только на внешний маппинг портов
+    
     if [ -n "$cert_domain" ] && [ -d "/etc/letsencrypt/live/${cert_domain}" ]; then
         # HTTPS конфигурация
         cat > nginx.conf <<EOF
@@ -3671,6 +3677,8 @@ generate_docker_compose() {
     fi
 
     # Начинаем docker-compose.yml
+    # ВАЖНО: Если nginx включен, xray-checker НЕ публикует порт наружу
+    # nginx подключается к нему через внутреннюю Docker сеть
     cat > "$FILE_COMPOSE" <<EOF
 services:
   xray-checker:
@@ -3679,8 +3687,23 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+EOF
+
+    # Порты: если nginx — не публикуем наружу, только expose
+    if [ "$INCLUDE_NGINX" = "true" ]; then
+        cat >> "$FILE_COMPOSE" <<EOF
+    expose:
+      - "2112"
+EOF
+    else
+        cat >> "$FILE_COMPOSE" <<EOF
     ports:
       - "${bind_host}:\${METRICS_PORT:-${port}}:2112"
+EOF
+    fi
+
+    # Healthcheck
+    cat >> "$FILE_COMPOSE" <<EOF
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:2112/health"]
       interval: 30s
@@ -4126,13 +4149,27 @@ quick_install() {
     # Проверка здоровья (даём время на запуск)
     info "${LANG[CHECKING_HEALTH]}"
     local health_ok=false
-    for i in {1..10}; do
-        sleep 2
-        if curl -sf "http://127.0.0.1:${DEFAULT_PORT}/health" >/dev/null 2>&1; then
-            health_ok=true
-            break
-        fi
-    done
+    
+    # Определяем способ проверки
+    if [ "$INCLUDE_NGINX" = "true" ]; then
+        # Nginx установлен — проверяем через Docker exec
+        for i in {1..15}; do
+            sleep 2
+            if docker exec xray-checker curl -sf "http://localhost:2112/health" >/dev/null 2>&1; then
+                health_ok=true
+                break
+            fi
+        done
+    else
+        # Без nginx — проверяем напрямую
+        for i in {1..10}; do
+            sleep 2
+            if curl -sf "http://127.0.0.1:${DEFAULT_PORT}/health" >/dev/null 2>&1; then
+                health_ok=true
+                break
+            fi
+        done
+    fi
     
     if [ "$health_ok" = true ]; then
         success "${LANG[CHECKING_HEALTH]}"
@@ -4320,13 +4357,28 @@ custom_install() {
     # Проверка здоровья (даём время на запуск)
     info "${LANG[CHECKING_HEALTH]}"
     local health_ok=false
-    for i in {1..10}; do
-        sleep 2
-        if curl -sf "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
-            health_ok=true
-            break
-        fi
-    done
+    local health_url=""
+    
+    # Определяем URL для health check
+    if [ "$INCLUDE_NGINX" = "true" ]; then
+        # Nginx установлен — проверяем через Docker exec
+        for i in {1..15}; do
+            sleep 2
+            if docker exec xray-checker curl -sf "http://localhost:2112/health" >/dev/null 2>&1; then
+                health_ok=true
+                break
+            fi
+        done
+    else
+        # Без nginx — проверяем напрямую
+        for i in {1..10}; do
+            sleep 2
+            if curl -sf "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
+                health_ok=true
+                break
+            fi
+        done
+    fi
     
     if [ "$health_ok" = true ]; then
         success "${LANG[CHECKING_HEALTH]}"
@@ -4400,12 +4452,14 @@ install_alias() {
     # Создать прямую ссылку
     cat > /usr/local/bin/xchecker <<EOF
 #!/bin/bash
+cd / 2>/dev/null || true
 bash <(curl -Ls ${SCRIPT_URL})
 EOF
     chmod +x /usr/local/bin/xchecker
 
     cat > /usr/local/bin/xray_checker_install <<EOF
 #!/bin/bash
+cd / 2>/dev/null || true
 bash <(curl -Ls ${SCRIPT_URL})
 EOF
     chmod +x /usr/local/bin/xray_checker_install
