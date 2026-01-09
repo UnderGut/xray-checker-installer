@@ -14,7 +14,6 @@
 
 # Документация
 !README.md
-!README-RU.md
 
 # Лицензия
 !LICENSE
@@ -22,3 +21,7 @@
 # Git файлы
 !.gitignore
 !.gitattributes
+
+# Screenshots
+!assets/
+!assets/**

@@ -4791,6 +4791,10 @@ main_menu() {
         print_box_empty 60
         print_box_bottom 60
         echo ""
+        
+        # Авторы
+        echo -e "  ${COLOR_GRAY}xray-checker: ${COLOR_WHITE}kutovoys${COLOR_RESET} ${COLOR_GRAY}| installer: ${COLOR_WHITE}UnderGut${COLOR_RESET} ${COLOR_GRAY}| based on: ${COLOR_WHITE}eGames${COLOR_RESET}"
+        echo ""
 
         print_menu_item "1" "🚀 ${LANG[MENU_QUICK_INSTALL]}" "${LANG[RECOMMENDED]}"
         print_menu_item "2" "⚙️  ${LANG[MENU_CUSTOM_INSTALL]}"

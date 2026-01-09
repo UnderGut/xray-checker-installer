@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+      .bg { fill: #1a1b26; }
+      .box { fill: none; stroke: #3d59a1; stroke-width: 2; }
+      .text { font-family: 'JetBrains Mono', 'Consolas', monospace; fill: #c0caf5; font-size: 14px; }
+      .title { font-family: 'JetBrains Mono', 'Consolas', monospace; fill: #c0caf5; font-size: 14px; font-weight: bold; }
+      .version { fill: #565f89; font-size: 13px; }
+      .status-on { fill: #9ece6a; }
+      .menu-num { fill: #7aa2f7; }
+      .menu-text { fill: #c0caf5; }
+      .recommended { fill: #565f89; font-size: 12px; }
+      .author { fill: #565f89; font-size: 12px; }
+      .prompt { fill: #bb9af7; }
+      .emoji { font-size: 14px; }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect class="bg" width="600" height="420" rx="8"/>
+  
+  <!-- Terminal dots -->
+  <circle cx="20" cy="15" r="6" fill="#f7768e"/>
+  <circle cx="40" cy="15" r="6" fill="#e0af68"/>
+  <circle cx="60" cy="15" r="6" fill="#9ece6a"/>
+  
+  <!-- Box border -->
+  <rect class="box" x="30" y="40" width="540" height="150" rx="0"/>
+  
+  <!-- ASCII Art Title -->
+  <text class="title" x="105" y="75">▀▄▀ █▀█ ▄▀█ █▄█ ▄▄ █▀▀ █░█ █▀▀ █▀▀ █▄▀ █▀▀ █▀█</text>
+  <text class="title" x="105" y="95">█░█ █▀▄ █▀█ ░█░ ░░ █▄▄ █▀█ ██▄ █▄▄ █░█ ██▄ █▀▄</text>
+  
+  <!-- Version info -->
+  <text class="version" x="225" y="130">Версия: 0.0.4-alpha</text>
+  <text class="status-on" x="249" y="150">●</text>
+  <text class="version" x="262" y="150">xray-checker: 1.1.2</text>
+  
+  <!-- Authors line -->
+  <text class="author" x="95" y="210">xray-checker: kutovoys | installer: UnderGut | based on: eGames</text>
+  
+  <!-- Menu items -->
+  <text class="menu-num" x="50" y="245">1.</text>
+  <text class="emoji" x="75" y="245">🚀</text>
+  <text class="menu-text" x="100" y="245">Быстрая установка</text>
+  <text class="recommended" x="260" y="245">(рекомендуется)</text>
+  
+  <text class="menu-num" x="50" y="268">2.</text>
+  <text class="emoji" x="75" y="268">⚙️</text>
+  <text class="menu-text" x="100" y="268">Расширенная установка</text>
+  
+  <text class="menu-num" x="50" y="291">3.</text>
+  <text class="emoji" x="75" y="291">📊</text>
+  <text class="menu-text" x="100" y="291">Управление сервисом</text>
+  
+  <text class="menu-num" x="50" y="314">4.</text>
+  <text class="emoji" x="75" y="314">🔄</text>
+  <text class="menu-text" x="100" y="314">Обновить скрипт</text>
+  
+  <text class="menu-num" x="50" y="337">5.</text>
+  <text class="emoji" x="75" y="337">🗑️</text>
+  <text class="menu-text" x="100" y="337">Удаление</text>
+  
+  <text class="menu-num" x="50" y="360">6.</text>
+  <text class="emoji" x="75" y="360">🌐</text>
+  <text class="menu-text" x="100" y="360">Язык</text>
+  
+  <text class="menu-num" x="50" y="390">0.</text>
+  <text class="menu-text" x="75" y="390">Выход</text>
+  
+  <!-- Prompt -->
+  <text class="prompt" x="50" y="410">[?]</text>
+  <text class="menu-text" x="85" y="410">Выберите вариант:</text>
+  <text class="menu-text" x="250" y="410">█</text>
+</svg>
